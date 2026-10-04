@@ -1,0 +1,49 @@
+# Development Log
+
+実装中に起きた問題・判断を記録する(plan-2 §14)。発表の材料にするため、後付けにしない。
+
+## 2026-10-04 - 最初の実装で決めたこと(Stage 1)
+
+### Context
+plan-2 の Stage 1(Generic Runtime + Source PVC + Data PVC)を end-to-end で通す最初の実装。
+
+### 決めたこと / 理由
+- **Namespace は1つ(`aap-apps`)**。App ごとの Namespace は ResourceQuota 等が必要になってからでよい。ownership は `aap-gen-` prefix + labels(`aap.dev/app-id`)で表す。Control Plane の Role も `aap-apps` に限定できる。
+- **Source PVC は `current/` と `snapshots/` を subPath で分け、Agent には `current/` だけ mount**。Agent は snapshot を壊せない。snapshot / restore / 初期化は root の短命な helper Job(busybox)が行う。
+- **Agent の完了判定は Job status**。progress event(HTTP POST)は UI 用の参考情報で、フェーズを GENERATING/TESTING に動かすことしかできない。
+- **Kubernetes の状態は poll で見る(Watch ではない)**。Control Plane 再起動後にそのまま続きから動けるため。Watch は必要になったら導入する。
+- **Operation は Kubernetes を呼ぶ前に SQLite へ保存(write-ahead)**。resource 名は app id / operation id から決定的に作り、`AlreadyExists` は成功扱い。再起動後は未完了 Operation を最初から再実行するだけで済む。
+- **delete は PVC を残す**(`?purge=true` のときだけ消す)。家族のデータを誤って消さないため。
+- **スタブ Agent(`AAP_AGENT=template`)を用意**。LLM なしでプラットフォームの流れを検証できる。実 Agent(`claude`)は未検証(API キー未設定)。
+
+## 2026-10-04 - helper image の初回 pull が 7 分止まった
+
+### Context
+kind 上で最初の e2e。`create` の最初の helper Job(busybox:1.37)。
+
+### Problem
+Job の所要時間が 7m44s。イベント上は `Pulling` のまま長時間止まり、`Pulled ... in 4.6s` と出たのはその後。2 つめの App では既存 image で即完了。
+
+### Why
+registry への初回アクセスの停滞(ネットワーク由来)。Control Plane のバグではない。
+
+### Design Question
+- helper image を Control Plane の image に同梱するか、事前に pull / ミラーしておくべきか。自宅サーバーでは外部 registry の遅延が「アプリ作成が終わらない」に直結する。
+- helper の timeout(10分)ぎりぎりだった。pull 待ちを失敗扱いにするかどうか。
+
+## 2026-10-04 - "壊す変更" が runtime ではなく Agent のテストで止まった
+
+### Context
+e2e シナリオ5(`BREAK_APP`: スタブ Agent が `server.js` を壊す)。
+
+### Actual State
+Agent Job は `npm test` で失敗 → Operation FAILED → restore Job が走り、元のソースに戻った。App は READY のまま、データも無傷。
+
+### Design Question
+想定していた「テストを通るが起動しない」ケース(runtime が Ready にならず restore する経路)は、このシナリオでは通っていない。ユニットテスト(fake)では確認済みだが、実クラスタでは未確認。テストを持たない App での確認を追加する。
+
+## 未検証・既知の穴(Stage 1)
+- 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
+- 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる
+- Data / SQLite の定期バックアップは manifest 側に未実装(母に使わせる前に必須)
+- Control Plane の認証なし(Portal 経由 + NetworkPolicy のみ)。Tailscale 等の前提

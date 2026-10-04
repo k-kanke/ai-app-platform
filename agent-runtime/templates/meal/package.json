@@ -1,0 +1,11 @@
+{
+  "name": "aap-gen-meal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "家族の昼食・夕食予定表 (AI App Platform App Contract reference app)",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -25,8 +25,15 @@ const (
 
 var appIDRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,28}[a-z0-9]$`)
 
-// ValidAppID: DNS-label safe and short enough that derived Job names stay <= 63.
-func ValidAppID(id string) bool { return appIDRe.MatchString(id) }
+// reserved ids would collide with platform hostnames ({id}.<domain>) or look official.
+var reserved = map[string]bool{
+	"portal": true, "www": true, "api": true, "admin": true, "argocd": true, "grafana": true,
+	"control-plane": true, "cloudflared": true, "mail": true, "login": true, "auth": true,
+}
+
+// ValidAppID: DNS-label safe, short enough that derived Job names stay <= 63,
+// and not a reserved platform hostname.
+func ValidAppID(id string) bool { return appIDRe.MatchString(id) && !reserved[id] }
 
 func base(appID string) string       { return Prefix + appID }
 func SourcePVC(appID string) string  { return base(appID) + "-src" }

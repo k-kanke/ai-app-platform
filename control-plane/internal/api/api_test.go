@@ -324,6 +324,7 @@ func TestValidation(t *testing.T) {
 		{"name": "x"}, // no prompt
 		{"id": "Bad_ID", "name": "x", "prompt": "p"}, // bad id
 		{"id": strings.Repeat("a", 40), "name": "x", "prompt": "p"},
+		{"id": "portal", "name": "x", "prompt": "p"}, // reserved: portal.<domain> belongs to the Portal
 	} {
 		if c, _ := e.do("POST", "/api/v1/apps", b, nil); c != 400 {
 			t.Fatalf("%v: want 400, got %d", b, c)

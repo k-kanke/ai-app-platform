@@ -50,13 +50,18 @@ func newEnv(t *testing.T, st *store.Store, cs *fake.Clientset) *env {
 	cfg := config.Config{Namespace: ns, Agent: "gemini", GeminiModel: "gemini-test-model", AgentImage: "agent", RuntimeImage: "rt", HelperImage: "busybox", SourceSize: "1Gi", DataSize: "1Gi",
 		AgentTimeout: time.Minute, InternalURL: "http://cp"}
 	broker := events.NewBroker()
-	orch := orchestrator.New(st, kube.New(cs, cfg), broker, orchestrator.Options{
+	kc := kube.New(cs, cfg)
+	// Pretend the Agent printed its latency trace as its last log line.
+	kc.LogReader = func(ctx context.Context, pod string, tail int64) (string, error) {
+		return "== agent=gemini\nsome agent output\nAAP_TRACE {\"v\":1,\"rc\":0,\"writes\":3,\"t_entry\":1000,\"t_first_write\":21000,\"t_last_write\":30000}\n", nil
+	}
+	orch := orchestrator.New(st, kc, broker, orchestrator.Options{
 		TokenSecret: "s3cret", PollInterval: 5 * time.Millisecond, RuntimeTimeout: 500 * time.Millisecond,
 		HelperTimeout: time.Second, AgentTimeout: time.Second,
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	base, cancel := context.WithCancel(context.Background())
 	e := &env{t: t, cs: cs, st: st, orch: orch, cancelBase: cancel}
-	srv := &api.Server{St: st, Kube: kube.New(cs, cfg), Orch: orch, Broker: broker, BaseCtx: base, AppURLTemplate: "http://{id}.apps.test"}
+	srv := &api.Server{St: st, Kube: kc, Orch: orch, Broker: broker, BaseCtx: base, AppURLTemplate: "http://{id}.apps.test"}
 	e.ts = httptest.NewServer(srv.Handler())
 	t.Cleanup(func() { cancel(); orch.Wait(); e.ts.Close() })
 	go e.kubelet(base)
@@ -148,6 +153,13 @@ func TestCreateAppEndToEnd(t *testing.T) {
 	app := e.waitPhase("meal", "READY")
 	if app["url"] != "http://meal.apps.test" {
 		t.Fatalf("url: %v", app["url"])
+	}
+
+	// The Agent's latency trace was collected from its log and stored on the operation.
+	_, opsOut := e.do("GET", "/api/v1/apps/meal/operations", nil, nil)
+	tr, _ := opsOut["operations"].([]any)[0].(map[string]any)["trace"].(string)
+	if !strings.Contains(tr, `"t_first_write":21000`) {
+		t.Fatalf("trace not stored on the operation: %q", tr)
 	}
 
 	// Source and Data are separate PVCs.

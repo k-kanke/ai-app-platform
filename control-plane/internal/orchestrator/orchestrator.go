@@ -22,6 +22,7 @@ import (
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/events"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/trace"
 )
 
 type Options struct {
@@ -285,6 +286,7 @@ func (o *Orchestrator) runBuild(ctx context.Context, op store.Operation) error {
 	if err != nil {
 		return err
 	}
+	o.collectTrace(ctx, op) // measurement only: success or failure, the agent's timeline is kept
 	if ph != kube.JobSucceeded {
 		return o.fail(ctx, op, modify, true, stageAgent, fmt.Errorf("agent failed: %s", reason))
 	}
@@ -303,6 +305,20 @@ func (o *Orchestrator) runBuild(ctx context.Context, op store.Operation) error {
 	}
 	o.Emit(ctx, op.AppID, op.ID, store.PhaseReady, "使えるようになりました")
 	return nil
+}
+
+// collectTrace saves the Agent's "AAP_TRACE" line (latency measurement) on the operation.
+// Best effort: a missing or malformed trace never affects the operation.
+func (o *Orchestrator) collectTrace(ctx context.Context, op store.Operation) {
+	logs, err := o.kube.AgentLogTail(ctx, op.AppID, op.ID, 200)
+	if err != nil {
+		return
+	}
+	if t := trace.Extract(logs); t != "" {
+		if err := o.st.SetOperationTrace(ctx, op.ID, t); err != nil {
+			o.log.Error("save trace", "op", op.ID, "err", err)
+		}
+	}
 }
 
 // explain builds the user-facing message and operator detail for a failure.

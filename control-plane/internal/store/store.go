@@ -64,6 +64,7 @@ type Operation struct {
 	IdempotencyKey string    `json:"-"`
 	Purge          bool      `json:"purge,omitempty"`       // delete: also remove PVCs. create (retry): start from an empty source
 	UserMessage    string    `json:"userMessage,omitempty"` // failure reason in plain Japanese
+	Trace          string    `json:"trace,omitempty"`       // raw AAP_TRACE JSON from the Agent (latency measurement)
 	Detail         string    `json:"detail,omitempty"`      // raw log tail for operators (not shown to users)
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
@@ -88,7 +89,7 @@ CREATE TABLE IF NOT EXISTS operations (
   id TEXT PRIMARY KEY, app_id TEXT NOT NULL, kind TEXT NOT NULL, prompt TEXT NOT NULL,
   state TEXT NOT NULL, step TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
   idempotency_key TEXT, purge INTEGER NOT NULL DEFAULT 0,
-  user_message TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '',
+  user_message TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', trace TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS ops_idem ON operations(app_id, idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> '';
 CREATE INDEX IF NOT EXISTS ops_app ON operations(app_id, created_at);
@@ -116,6 +117,7 @@ func Open(path string) (*Store, error) {
 	for _, col := range []string{
 		`ALTER TABLE operations ADD COLUMN user_message TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE operations ADD COLUMN detail TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE operations ADD COLUMN trace TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return nil, err
@@ -270,6 +272,12 @@ func (s *Store) UpdateOperation(ctx context.Context, id, state, step, errMsg str
 	return err
 }
 
+// SetOperationTrace stores the Agent's latency trace (a JSON object) on the operation.
+func (s *Store) SetOperationTrace(ctx context.Context, id, trace string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE operations SET trace=?, updated_at=updated_at WHERE id=?`, trace, id)
+	return err
+}
+
 // FailOperation marks an operation failed with a user-facing message and operator detail.
 func (s *Store) FailOperation(ctx context.Context, id, step, errMsg, userMsg, detail string) error {
 	_, err := s.db.ExecContext(ctx,
@@ -278,7 +286,7 @@ func (s *Store) FailOperation(ctx context.Context, id, step, errMsg, userMsg, de
 	return err
 }
 
-const opSelect = `SELECT id,app_id,kind,prompt,state,step,error,COALESCE(idempotency_key,''),purge,user_message,detail,created_at,updated_at FROM operations`
+const opSelect = `SELECT id,app_id,kind,prompt,state,step,error,COALESCE(idempotency_key,''),purge,user_message,detail,trace,created_at,updated_at FROM operations`
 
 type scanner interface{ Scan(...any) error }
 
@@ -286,7 +294,7 @@ func (s *Store) scanOp(r scanner) (Operation, error) {
 	var op Operation
 	var c, u string
 	var purge int
-	err := r.Scan(&op.ID, &op.AppID, &op.Kind, &op.Prompt, &op.State, &op.Step, &op.Error, &op.IdempotencyKey, &purge, &op.UserMessage, &op.Detail, &c, &u)
+	err := r.Scan(&op.ID, &op.AppID, &op.Kind, &op.Prompt, &op.State, &op.Step, &op.Error, &op.IdempotencyKey, &purge, &op.UserMessage, &op.Detail, &op.Trace, &c, &u)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Operation{}, ErrNotFound
 	}

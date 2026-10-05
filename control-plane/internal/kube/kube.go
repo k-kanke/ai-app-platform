@@ -44,6 +44,9 @@ const (
 type Client struct {
 	cs  kubernetes.Interface
 	cfg config.Config
+
+	// LogReader overrides how pod logs are read (tests). nil = the Kubernetes API.
+	LogReader func(ctx context.Context, pod string, tailLines int64) (string, error)
 }
 
 func New(cs kubernetes.Interface, cfg config.Config) *Client { return &Client{cs: cs, cfg: cfg} }
@@ -241,6 +244,9 @@ func (c *Client) AgentLogTail(ctx context.Context, appID, opID string, lines int
 	pods, err := c.cs.CoreV1().Pods(c.cfg.Namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
 	if err != nil || len(pods.Items) == 0 {
 		return "", err
+	}
+	if c.LogReader != nil {
+		return c.LogReader(ctx, pods.Items[0].Name, lines)
 	}
 	raw, err := c.cs.CoreV1().Pods(c.cfg.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{TailLines: &lines}).Do(ctx).Raw()
 	return string(raw), err

@@ -1,7 +1,7 @@
 FROM node:20-alpine
 ARG INSTALL_CLAUDE=false
 ARG INSTALL_GEMINI=false
-RUN apk add --no-cache bash curl git tini coreutils \
+RUN apk add --no-cache bash curl git tini coreutils inotify-tools \
  && if [ "$INSTALL_CLAUDE" = "true" ]; then npm install -g @anthropic-ai/claude-code; fi \
  && if [ "$INSTALL_GEMINI" = "true" ]; then npm install -g @google/gemini-cli@0.62.0; fi
 COPY entrypoint.sh /opt/aap/entrypoint.sh

@@ -1,0 +1,27 @@
+kernel: 6.8.0-100-generic aarch64   N=5 (median)
+
+### tree=small  (8 files, 0.0 MiB)
+| backend      | tree   |  release (s) | extra disk (MiB) | rollback (s) |
+| ------------ | ------ | ------------ | -------------- | ------------ |
+| ext4-cp      | small  |        0.009 |            0.0 |        0.004 |
+| xfs-cp       | small  |        0.005 |            0.0 |        0.004 |
+| xfs-reflink  | small  |        0.005 |            0.0 |        0.004 |
+| lvm-thin     | small  | (unavailable) |              - |            - |
+  note: this kernel has no dm-thin-pool target; run on a real Linux host
+
+### tree=large  (9193 files, 324.1 MiB)
+| backend      | tree   |  release (s) | extra disk (MiB) | rollback (s) |
+| ------------ | ------ | ------------ | -------------- | ------------ |
+| ext4-cp      | large  |        1.073 |          352.7 |        1.333 |
+| xfs-cp       | large  |        1.507 |          355.1 |        1.363 |
+| xfs-reflink  | large  |        0.216 |            5.8 |        0.326 |
+| lvm-thin     | large  | (unavailable) |              - |            - |
+  note: this kernel has no dm-thin-pool target; run on a real Linux host
+
+### quota: limit one directory to 10 MiB, then write 100 MiB into it
+| backend                    | result of writing 100 MiB into a 10 MiB-limited directory |
+| -------------------------- | ---------------------------------------------- |
+| ext4, no quota (today)     | NOT enforced: wrote 100 MiB |
+| ext4 + project quota       | (unavailable: this kernel has no quota support) |
+| XFS + project quota        | ENFORCED: write failed after 10 MiB |
+| separate 10 MiB volume     | ENFORCED: write failed after 8 MiB |

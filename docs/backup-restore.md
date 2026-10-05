@@ -3,7 +3,7 @@
 ## 何を、どこへ
 - 対象: worker の `/opt/local-path-provisioner` 全体
   (Control Plane の SQLite、各アプリの Source PVC / Data PVC。ディレクトリ名は `pvc-<uid>_<namespace>_<pvc名>`)
-- 保存先: Cloudflare R2 の `kanke-aap-backup/restic`(restic で暗号化)
+- 保存先: Cloudflare R2 の `kanke-aap-gen-backup/restic`(restic で暗号化)
 - 実行: 毎日 03:00 JST の CronJob(`backup/restic-backup`)
 - 保存期間: 毎日 7 / 毎週 4 / 毎月 6。毎回 `restic check`(構造 + データ 5%)
 

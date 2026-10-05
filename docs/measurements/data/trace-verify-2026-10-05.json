@@ -1,0 +1,493 @@
+{
+ "fetchedAt": "2026-10-05T06:47:14.615411+00:00",
+ "label": "first real run with agent trace; image freshly updated (cold start included); create of a trivial counter page",
+ "apps": {
+  "app-2ef57e": {
+   "ops": [
+    {
+     "id": "72198c6a9f7da791",
+     "appId": "app-2ef57e",
+     "kind": "create",
+     "prompt": "昼と夜にみんながご飯を食べるかをスマホから入力して管理できるようなアプリが欲しいです",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "createdAt": "2026-10-04T19:45:07.78376143Z",
+     "updatedAt": "2026-10-04T19:45:25.875467143Z"
+    }
+   ],
+   "events": [
+    {
+     "id": 10,
+     "appId": "app-2ef57e",
+     "opId": "72198c6a9f7da791",
+     "phase": "QUEUED",
+     "message": "依頼を受け付けました",
+     "createdAt": "2026-10-04T19:45:07.784864375Z"
+    },
+    {
+     "id": 11,
+     "appId": "app-2ef57e",
+     "opId": "72198c6a9f7da791",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-04T19:45:07.786050083Z"
+    },
+    {
+     "id": 12,
+     "appId": "app-2ef57e",
+     "opId": "72198c6a9f7da791",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-04T19:45:17.193039735Z"
+    },
+    {
+     "id": 13,
+     "appId": "app-2ef57e",
+     "opId": "72198c6a9f7da791",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-04T19:45:17.303239775Z"
+    },
+    {
+     "id": 14,
+     "appId": "app-2ef57e",
+     "opId": "72198c6a9f7da791",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-04T19:45:18.029492453Z"
+    },
+    {
+     "id": 15,
+     "appId": "app-2ef57e",
+     "opId": "72198c6a9f7da791",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-04T19:45:21.839848562Z"
+    },
+    {
+     "id": 16,
+     "appId": "app-2ef57e",
+     "opId": "72198c6a9f7da791",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-04T19:45:25.8748529Z"
+    }
+   ]
+  },
+  "shopping": {
+   "ops": [
+    {
+     "id": "4f50b00d61f8fc8b",
+     "appId": "shopping",
+     "kind": "modify",
+     "prompt": "買い物リストの文字をもっと大きくして、チェックした品物は薄い灰色で表示してほしい。",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "createdAt": "2026-10-05T02:13:15.767419012Z",
+     "updatedAt": "2026-10-05T02:14:26.01840932Z"
+    },
+    {
+     "id": "2a5569f773236352",
+     "appId": "shopping",
+     "kind": "create",
+     "prompt": "家族みんなで使える買い物リストが欲しい。品物を追加して、買ったらタップでチェックできるようにしたい。チェックした物は下にまとめて、まとめて消せるようにしたい。",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "createdAt": "2026-10-05T02:09:41.407580856Z",
+     "updatedAt": "2026-10-05T02:12:17.829320868Z"
+    }
+   ],
+   "events": [
+    {
+     "id": 17,
+     "appId": "shopping",
+     "opId": "2a5569f773236352",
+     "phase": "QUEUED",
+     "message": "依頼を受け付けました",
+     "createdAt": "2026-10-05T02:09:41.408718217Z"
+    },
+    {
+     "id": 18,
+     "appId": "shopping",
+     "opId": "2a5569f773236352",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T02:09:41.418168858Z"
+    },
+    {
+     "id": 19,
+     "appId": "shopping",
+     "opId": "2a5569f773236352",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T02:09:58.666720125Z"
+    },
+    {
+     "id": 20,
+     "appId": "shopping",
+     "opId": "2a5569f773236352",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T02:12:07.796946326Z"
+    },
+    {
+     "id": 21,
+     "appId": "shopping",
+     "opId": "2a5569f773236352",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T02:12:08.159439251Z"
+    },
+    {
+     "id": 22,
+     "appId": "shopping",
+     "opId": "2a5569f773236352",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T02:12:11.74511354Z"
+    },
+    {
+     "id": 23,
+     "appId": "shopping",
+     "opId": "2a5569f773236352",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T02:12:17.828770343Z"
+    },
+    {
+     "id": 24,
+     "appId": "shopping",
+     "opId": "4f50b00d61f8fc8b",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T02:13:15.768779817Z"
+    },
+    {
+     "id": 25,
+     "appId": "shopping",
+     "opId": "4f50b00d61f8fc8b",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T02:13:15.76993446Z"
+    },
+    {
+     "id": 26,
+     "appId": "shopping",
+     "opId": "4f50b00d61f8fc8b",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T02:13:21.149778268Z"
+    },
+    {
+     "id": 27,
+     "appId": "shopping",
+     "opId": "4f50b00d61f8fc8b",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T02:14:17.957753556Z"
+    },
+    {
+     "id": 28,
+     "appId": "shopping",
+     "opId": "4f50b00d61f8fc8b",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T02:14:18.28291426Z"
+    },
+    {
+     "id": 29,
+     "appId": "shopping",
+     "opId": "4f50b00d61f8fc8b",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T02:14:21.948922513Z"
+    },
+    {
+     "id": 30,
+     "appId": "shopping",
+     "opId": "4f50b00d61f8fc8b",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T02:14:26.017595423Z"
+    }
+   ]
+  },
+  "weather": {
+   "ops": [
+    {
+     "id": "0b44d13e2eb88c0f",
+     "appId": "weather",
+     "kind": "modify",
+     "prompt": "古い画面のファイルがキャッシュに残って、変更が反映されないことがあります。次の2つを直してください。(1) index.html が読み込む app.js と style.css のURLの末尾に ?v=2 を付ける。(2) サーバーが画面のファイル(HTML・CSS・JS)を返すときの Cache-Control を no-cache にする。見た目や動作は変えないでください。",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "createdAt": "2026-10-05T02:53:57.391716568Z",
+     "updatedAt": "2026-10-05T02:54:53.597063678Z"
+    },
+    {
+     "id": "be5f4e0ec88833c2",
+     "appId": "weather",
+     "kind": "modify",
+     "prompt": "画面の「八王子の天気を調べています...」とくるくるが、天気が表示されたあとも消えずにのこっています。天気が表示されたら、読み込み中の表示は消してください。",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "createdAt": "2026-10-05T02:42:32.046903924Z",
+     "updatedAt": "2026-10-05T02:43:54.295053264Z"
+    },
+    {
+     "id": "88ebcb4e47980caf",
+     "appId": "weather",
+     "kind": "create",
+     "prompt": "毎晩洗濯物を干すのだが、夜に降るのか、明日降るのか毎回調べるのが面倒なので教えてくれるようにしてほしい。\nちなみに八王子市に住んでるので八王子市だけで良いです",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "createdAt": "2026-10-05T02:26:33.20534564Z",
+     "updatedAt": "2026-10-05T02:30:05.669834371Z"
+    }
+   ],
+   "events": [
+    {
+     "id": 38,
+     "appId": "weather",
+     "opId": "88ebcb4e47980caf",
+     "phase": "QUEUED",
+     "message": "依頼を受け付けました",
+     "createdAt": "2026-10-05T02:26:33.20656914Z"
+    },
+    {
+     "id": 39,
+     "appId": "weather",
+     "opId": "88ebcb4e47980caf",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T02:26:33.208058952Z"
+    },
+    {
+     "id": 40,
+     "appId": "weather",
+     "opId": "88ebcb4e47980caf",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T02:26:42.519498855Z"
+    },
+    {
+     "id": 41,
+     "appId": "weather",
+     "opId": "88ebcb4e47980caf",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T02:29:55.51870304Z"
+    },
+    {
+     "id": 42,
+     "appId": "weather",
+     "opId": "88ebcb4e47980caf",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T02:29:57.144226001Z"
+    },
+    {
+     "id": 43,
+     "appId": "weather",
+     "opId": "88ebcb4e47980caf",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T02:30:01.609277525Z"
+    },
+    {
+     "id": 44,
+     "appId": "weather",
+     "opId": "88ebcb4e47980caf",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T02:30:05.669329486Z"
+    },
+    {
+     "id": 45,
+     "appId": "weather",
+     "opId": "be5f4e0ec88833c2",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T02:42:32.048217614Z"
+    },
+    {
+     "id": 46,
+     "appId": "weather",
+     "opId": "be5f4e0ec88833c2",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T02:42:32.049570945Z"
+    },
+    {
+     "id": 47,
+     "appId": "weather",
+     "opId": "be5f4e0ec88833c2",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T02:42:45.898468459Z"
+    },
+    {
+     "id": 48,
+     "appId": "weather",
+     "opId": "be5f4e0ec88833c2",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T02:43:43.592130946Z"
+    },
+    {
+     "id": 49,
+     "appId": "weather",
+     "opId": "be5f4e0ec88833c2",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T02:43:45.121581683Z"
+    },
+    {
+     "id": 50,
+     "appId": "weather",
+     "opId": "be5f4e0ec88833c2",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T02:43:48.227646345Z"
+    },
+    {
+     "id": 51,
+     "appId": "weather",
+     "opId": "be5f4e0ec88833c2",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T02:43:54.294473824Z"
+    },
+    {
+     "id": 52,
+     "appId": "weather",
+     "opId": "0b44d13e2eb88c0f",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T02:53:57.394376914Z"
+    },
+    {
+     "id": 53,
+     "appId": "weather",
+     "opId": "0b44d13e2eb88c0f",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T02:53:57.396087309Z"
+    },
+    {
+     "id": 54,
+     "appId": "weather",
+     "opId": "0b44d13e2eb88c0f",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T02:54:02.701998356Z"
+    },
+    {
+     "id": 55,
+     "appId": "weather",
+     "opId": "0b44d13e2eb88c0f",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T02:54:45.066707391Z"
+    },
+    {
+     "id": 56,
+     "appId": "weather",
+     "opId": "0b44d13e2eb88c0f",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T02:54:46.823011105Z"
+    },
+    {
+     "id": 57,
+     "appId": "weather",
+     "opId": "0b44d13e2eb88c0f",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T02:54:49.537223252Z"
+    },
+    {
+     "id": 58,
+     "appId": "weather",
+     "opId": "0b44d13e2eb88c0f",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T02:54:53.596436069Z"
+    }
+   ]
+  },
+  "trace-test": {
+   "ops": [
+    {
+     "id": "014b77a1341867b8",
+     "appId": "trace-test",
+     "kind": "create",
+     "prompt": "ボタンが1つあって、押すと数字が1ずつ増える、とてもシンプルなページ",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"trace-test\",\"op\":\"014b77a1341867b8\",\"kind\":\"create\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791182698461,\"t_agent_start\":1791182698513,\"t_first_write\":1791182750046,\"t_last_write\":1791182777048,\"writes\":10,\"t_agent_end\":1791182797536,\"t_checks_end\":1791182797787,\"t_test_start\":1791182797840,\"t_test_end\":1791182798077,\"t_exit\":1791182798110}",
+     "createdAt": "2026-10-05T06:44:40.060360666Z",
+     "updatedAt": "2026-10-05T06:46:48.51446008Z"
+    }
+   ],
+   "events": [
+    {
+     "id": 59,
+     "appId": "trace-test",
+     "opId": "014b77a1341867b8",
+     "phase": "QUEUED",
+     "message": "依頼を受け付けました",
+     "createdAt": "2026-10-05T06:44:40.063131742Z"
+    },
+    {
+     "id": 60,
+     "appId": "trace-test",
+     "opId": "014b77a1341867b8",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T06:44:40.064911989Z"
+    },
+    {
+     "id": 61,
+     "appId": "trace-test",
+     "opId": "014b77a1341867b8",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T06:44:58.508517589Z"
+    },
+    {
+     "id": 62,
+     "appId": "trace-test",
+     "opId": "014b77a1341867b8",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T06:46:37.838849963Z"
+    },
+    {
+     "id": 63,
+     "appId": "trace-test",
+     "opId": "014b77a1341867b8",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T06:46:38.100121074Z"
+    },
+    {
+     "id": 64,
+     "appId": "trace-test",
+     "opId": "014b77a1341867b8",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T06:46:42.443427752Z"
+    },
+    {
+     "id": 65,
+     "appId": "trace-test",
+     "opId": "014b77a1341867b8",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T06:46:48.513927502Z"
+    }
+   ]
+  }
+ }
+}

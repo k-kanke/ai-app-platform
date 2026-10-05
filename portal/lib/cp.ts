@@ -4,6 +4,7 @@ export const CP = process.env.CONTROL_PLANE_URL ?? 'http://localhost:8080';
 export type Operation = { id: string; kind: string; state: string; step: string; prompt: string; error?: string; userMessage?: string };
 export type AppView = {
   id: string; name: string; phase: string; url?: string; operation?: Operation;
+  strategy?: string; liveRelease?: number; draftState?: string; previewUrl?: string;
 };
 
 export async function listApps(): Promise<AppView[]> {
@@ -27,6 +28,7 @@ export const PHASE_LABEL: Record<string, { text: string; tone: 'ok' | 'wait' | '
   TESTING: { text: '動きを確認しています', tone: 'wait' },
   STARTING: { text: '起動しています', tone: 'wait' },
   READY: { text: '使えます', tone: 'ok' },
+  PREVIEW: { text: 'お試し版ができました', tone: 'wait' },
   FAILED: { text: 'うまくいきませんでした', tone: 'bad' },
   DELETING: { text: '削除しています', tone: 'wait' },
 };

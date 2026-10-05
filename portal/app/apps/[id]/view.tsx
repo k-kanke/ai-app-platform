@@ -41,6 +41,21 @@ export default function View({ initial }: { initial: AppView }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const retryKey = useRef(crypto.randomUUID());
+  const isRelease = app.strategy === 'release';
+  const previewReady = isRelease && app.draftState === 'PREVIEW_READY' && !busy;
+  const [confirmRollback, setConfirmRollback] = useState(false);
+  const [withData, setWithData] = useState(false);
+  const actKey = useRef(crypto.randomUUID());
+
+  async function act(path: string, body: object = {}) {
+    setErr('');
+    const r = await fetch(`/api/apps/${app.id}/${path}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': actKey.current },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) { actKey.current = crypto.randomUUID(); setLog([]); setConfirmRollback(false); refresh(); }
+    else setErr((await r.json().catch(() => ({}))).error ?? 'うまく送れませんでした');
+  }
 
   async function retry(e: React.FormEvent) {
     e.preventDefault(); setErr('');
@@ -86,7 +101,47 @@ export default function View({ initial }: { initial: AppView }) {
         </div>
       )}
 
+      {previewReady && (
+        <div className="card">
+          <h2 style={{ marginTop: 0, fontSize: 18 }}>お試し版ができました</h2>
+          <p className="hint">
+            {app.liveRelease ? 'まだ、みんなが使っているアプリは変わっていません。' : 'まだ、みんなには公開されていません。'}
+            お試し版で使ってみて、よければ「これでOK」を押してください。
+          </p>
+          {app.previewUrl && <p><a className="btn primary" href={app.previewUrl} target="_blank" rel="noreferrer">お試し版を開く</a></p>}
+          <form onSubmit={(e) => { e.preventDefault(); act('changes', { prompt }).then(() => setPrompt('')); }}>
+            <label htmlFor="pc" style={{ marginTop: 0 }}>もう少し直したいところ</label>
+            <textarea id="pc" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="例: 文字をもっと大きくして" />
+            <div className="btns" style={{ marginTop: 10 }}>
+              <button className="btn" type="submit" disabled={!prompt.trim()}>もう少し直してもらう</button>
+              <button className="btn primary" type="button" onClick={() => act('approve')}>これでOK(みんなが使えるようにする)</button>
+              {app.liveRelease ? <button className="btn" type="button" onClick={() => act('discard')}>やめる</button> : null}
+            </div>
+          </form>
+          {err && <p className="err">{err}</p>}
+        </div>
+      )}
+
       {app.phase === 'READY' && app.url && <p><a className="btn primary" href={app.url}>アプリを開く</a></p>}
+      {isRelease && (app.liveRelease ?? 0) >= 2 && !busy && (
+        <div style={{ marginTop: 8 }}>
+          {!confirmRollback ? (
+            <button className="btn" onClick={() => setConfirmRollback(true)}>ひとつ前の版に戻す</button>
+          ) : (
+            <div className="card">
+              <p style={{ marginTop: 0 }}>いまの版({app.liveRelease})から、ひとつ前の版({(app.liveRelease ?? 1) - 1})に戻します。</p>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, margin: '8px 0' }}>
+                <input type="checkbox" checked={withData} onChange={(e) => setWithData(e.target.checked)} />
+                入力したデータも、前の版に切り替える直前の状態に戻す
+              </label>
+              <div className="btns">
+                <button className="btn" onClick={() => setConfirmRollback(false)}>やめる</button>
+                <button className="btn primary" onClick={() => act('rollback', { withData })}>戻す</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {failedChange && (
         <p className="err">前回の変更はうまくいかなかったので、元のアプリに戻しました。{reason ? <><br />{reason}</> : '言い方を変えてもう一度試せます。'}</p>
       )}
@@ -100,7 +155,7 @@ export default function View({ initial }: { initial: AppView }) {
         </form>
       )}
 
-      {app.phase === 'READY' && !busy && (
+      {(app.phase === 'READY' || (isRelease && app.phase === 'PREVIEW')) && !busy && !previewReady && (
         <form onSubmit={change} className="card">
           <label htmlFor="c" style={{ marginTop: 0 }}>変えたいところを教えてください</label>
           <textarea id="c" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="例: 文字をもっと大きくして" required />

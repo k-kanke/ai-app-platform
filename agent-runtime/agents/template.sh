@@ -9,6 +9,14 @@ if [[ "$prompt" == *FAIL_QUOTA* ]]; then
   # Mimics Gemini CLI hitting the project's spending cap.
   echo "Attempt 1 failed with status 429. Your project has exceeded its monthly spending cap." >&2; exit 1
 fi
+if [[ "$prompt" == *BREAK_UI* ]]; then
+  # Simulates a long agent run that leaves the UI broken part-way and then fails.
+  # (Used to measure whether the family could ever SEE the broken state.)
+  echo "stub agent: breaking the UI for 20s, then failing"
+  printf '<!doctype html><meta charset=utf-8><h1>壊れた画面</h1>' > public/index.html
+  sleep 20
+  exit 1
+fi
 if [[ "$prompt" == *FAIL_AGENT* ]]; then
   echo "stub agent: simulated failure"; exit 1
 fi

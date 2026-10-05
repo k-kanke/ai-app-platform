@@ -40,6 +40,8 @@ $K -n platform-system set env deploy/control-plane AAP_RUNTIME_TIMEOUT_SECONDS=7
 $K -n platform-system rollout restart deploy/control-plane >/dev/null
 $K -n platform-system rollout status deploy/control-plane --timeout=120s
 
+[ -z "${SETUP_ONLY:-}" ] || { echo "platform deployed (SETUP_ONLY): cluster $CTX is ready"; exit 0; }
+
 pkill -f "port-forward.*18080" 2>/dev/null || true
 $K -n platform-system port-forward svc/control-plane 18080:8080 >/tmp/aap-pf.log 2>&1 &
 PF=$!

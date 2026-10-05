@@ -32,10 +32,11 @@ type Config struct {
 	GeminiModel        string // optional model for AAP_AGENT=gemini (empty = CLI default)
 	AgentTimeout       time.Duration
 	RuntimeTimeout     time.Duration
-	AgentSecretName    string // optional Secret holding LLM credentials, mounted only into Agent Jobs
-	AppURLTemplate     string // e.g. "http://{id}.apps.home"
-	IngressClass       string // empty = do not create Ingress
-	IngressHostPattern string // e.g. "{id}.apps.home"
+	PollInterval       time.Duration // how often operations check Jobs / Deployments
+	AgentSecretName    string        // optional Secret holding LLM credentials, mounted only into Agent Jobs
+	AppURLTemplate     string        // e.g. "http://{id}.apps.home"
+	IngressClass       string        // empty = do not create Ingress
+	IngressHostPattern string        // e.g. "{id}.apps.home"
 
 	Kubeconfig string // empty = in-cluster
 }
@@ -73,6 +74,11 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("AAP_RUNTIME_TIMEOUT_SECONDS must be a positive integer")
 	}
 	c.RuntimeTimeout = time.Duration(secs) * time.Second
+	ms, err := strconv.Atoi(env("AAP_POLL_INTERVAL_MS", "250"))
+	if err != nil || ms < 50 {
+		return c, fmt.Errorf("AAP_POLL_INTERVAL_MS must be an integer >= 50")
+	}
+	c.PollInterval = time.Duration(ms) * time.Millisecond
 	if c.TokenSecret == "" {
 		return c, fmt.Errorf("AAP_TOKEN_SECRET is required (used to sign per-operation agent tokens)")
 	}

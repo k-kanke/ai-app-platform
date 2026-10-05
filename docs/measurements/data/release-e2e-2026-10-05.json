@@ -1,0 +1,170 @@
+{
+ "startedAt": "2026-10-05T08:26:18.078744+00:00",
+ "checks": [
+  {
+   "name": "create accepted",
+   "ok": true,
+   "detail": "202"
+  },
+  {
+   "name": "app is in PREVIEW with a previewUrl-able draft",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "no production Deployment exists yet",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "preview Deployment runs draft/ read-only on its own data",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "preview answers /healthz",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "name": "approve accepted",
+   "ok": true,
+   "detail": "202"
+  },
+  {
+   "name": "release 1 live",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "production runs releases/1",
+   "ok": true,
+   "detail": "releases/1"
+  },
+  {
+   "name": "the live release is read-only inside the pod",
+   "ok": true,
+   "detail": "rc=1"
+  },
+  {
+   "name": "release 1 has a 64-hex content hash",
+   "ok": true,
+   "detail": "60b65fa1184b996f58a8a76e35bbb915c92cd5e547b01e773aa1d26e65680744"
+  },
+  {
+   "name": "production answers /healthz",
+   "ok": true,
+   "detail": "200"
+  },
+  {
+   "name": "production still runs releases/1 while the change is only a preview",
+   "ok": true,
+   "detail": "releases/1"
+  },
+  {
+   "name": "D1: preview data contains the production answer (it is a copy)",
+   "ok": true,
+   "detail": "{\"members\":[\"妹\",\"孝太郎\",\"母\",\"父\"],\"answers\":{\"2026-10-05|dinner|母\":\"yes\"},\"updatedAt\":\"2026-10-05T08:27:23.610Z\"}"
+  },
+  {
+   "name": "D1: a write to the preview never reaches production",
+   "ok": true,
+   "detail": "{\"members\":[\"妹\",\"孝太郎\",\"母\",\"父\"],\"answers\":{\"2026-10-05|dinner|母\":\"yes\"},\"updatedAt\":\"2026-10-05T08:27:23.610Z\"}"
+  },
+  {
+   "name": "E1: production never showed the broken page (release strategy)",
+   "ok": true,
+   "detail": "{'samples': 160, 'span_s': 32.0, 'broken_samples': 0, 'error_samples': 0, 'broken_seconds': 0.0, 'longest_unavailable_s': 0.0}"
+  },
+  {
+   "name": "the failed change left no preview and production on release 1",
+   "ok": true,
+   "detail": "{'id': 'rel', 'name': 'リリース方式', 'phase': 'READY', 'strategy': 'release', 'liveRelease': 1, 'createdAt': '2026-10-05T08:13:21.238276838Z', 'updatedAt': '2026-10-05T08:28:02.913326724Z', 'url': 'https://rel.kanke-aap-gen.com', 'actual': {'sourceBound': True, 'dataBound': True, 'runtimeExists': True, 'runtimeReady': True}, 'operation': {'id': 'c953ac645a3d21d9', 'appId': 'rel', 'kind': 'modify', 'prompt': 'BREAK_UI 画面を作り直して', 'state': 'FAILED', 'step': 'failed', 'error': 'agent failed: BackoffLimitExceeded: Job has reached the specified backoff limit', 'userMessage': 'うまく作れませんでした。言い方を変えて、もう一度お試しください。', 'trace': '{\"v\":1,\"app\":\"rel\",\"op\":\"c953ac645a3d21d9\",\"kind\":\"modify\",\"agent\":\"template\",\"model\":\"gemini-3.8-flash\",\"rc\":1,\"t_entry\":1791188856650,\"t_agent_start\":1791188856674,\"t_first_write\":1791188856676,\"t_last_write\":1791188856676,\"writes\":1,\"t_agent_end\":1791188876685,\"t_checks_end\":null,\"t_test_start\":null,\"t_test_end\":null,\"t_exit\":1791188876939}', 'createdAt': '2026-10-05T08:27:36.042333143Z', 'updatedAt': '2026-10-05T08:28:02.915451823Z'}}"
+  },
+  {
+   "name": "release 2 live",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "R1: release 2 has a different content hash from release 1",
+   "ok": true,
+   "detail": "('60b65fa1184b', '5a51b6d4b280')"
+  },
+  {
+   "name": "release 2 recorded a data snapshot",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "rollback accepted",
+   "ok": true,
+   "detail": "202"
+  },
+  {
+   "name": "production is back on release 1",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "production runs releases/1 again",
+   "ok": true,
+   "detail": "releases/1"
+  },
+  {
+   "name": "D2: data written before release 2 survived (marker X)",
+   "ok": true,
+   "detail": "{\"members\":[\"妹\",\"孝太郎\",\"母\",\"父\"],\"answers\":{\"2026-10-05|dinner|母\":\"yes\",\"2026-10-07|lunch|妹\":\"yes\"},\"updatedAt\":\"2026-10-05T08:28:14.255Z\"}"
+  },
+  {
+   "name": "D2: data written after release 2 is gone (marker Y)",
+   "ok": true,
+   "detail": "{\"members\":[\"妹\",\"孝太郎\",\"母\",\"父\"],\"answers\":{\"2026-10-05|dinner|母\":\"yes\",\"2026-10-07|lunch|妹\":\"yes\"},\"updatedAt\":\"2026-10-05T08:28:14.255Z\"}"
+  },
+  {
+   "name": "E1: the in-place strategy DID show the broken page to its users (the problem this solves)",
+   "ok": true,
+   "detail": "{'samples': 194, 'span_s': 37.6, 'broken_samples': 121, 'error_samples': 16, 'broken_seconds': 24.2, 'longest_unavailable_s': 24.23}"
+  }
+ ],
+ "measurements": {
+  "create_to_preview_s": 15.3,
+  "first_approve_s": 5.7,
+  "modify_to_preview_s": 8.3,
+  "E1_release": {
+   "samples": 160,
+   "span_s": 32.0,
+   "broken_samples": 0,
+   "error_samples": 0,
+   "broken_seconds": 0.0,
+   "longest_unavailable_s": 0.0
+  },
+  "approve_to_live_s": 9.4,
+  "approve_switch": {
+   "samples": 80,
+   "span_s": 12.3,
+   "broken_samples": 0,
+   "error_samples": 47,
+   "broken_seconds": 0.0,
+   "longest_unavailable_s": 5.83
+  },
+  "rollback_s": 8.9,
+  "rollback_switch": {
+   "samples": 77,
+   "span_s": 11.8,
+   "broken_samples": 0,
+   "error_samples": 43,
+   "broken_seconds": 0.0,
+   "longest_unavailable_s": 5.22
+  },
+  "E1_inplace": {
+   "samples": 194,
+   "span_s": 37.6,
+   "broken_samples": 121,
+   "error_samples": 16,
+   "broken_seconds": 24.2,
+   "longest_unavailable_s": 24.23
+  }
+ },
+ "finishedAt": "2026-10-05T08:29:29.168105+00:00"
+}

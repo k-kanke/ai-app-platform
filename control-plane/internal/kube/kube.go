@@ -351,13 +351,12 @@ func (c *Client) appDeployment(p deployParams) *appsv1.Deployment {
 						},
 						Resources:       limits("500m", "512Mi"),
 						SecurityContext: withReadOnlyRoot(restrictedSC(AppUID)),
+						// Probe intervals are short on purpose: a switch of the live release stops production, and
+						// the time until the new pod is counted Ready is downtime (docs/measurements M-012, M-013).
+						// There is deliberately no startupProbe: without a livenessProbe it only delays Ready.
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("http")}},
-							PeriodSeconds: 5, FailureThreshold: 3,
-						},
-						StartupProbe: &corev1.Probe{
-							ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("http")}},
-							PeriodSeconds: 2, FailureThreshold: 60,
+							PeriodSeconds: 1, FailureThreshold: 3,
 						},
 					}},
 				},

@@ -60,7 +60,7 @@ func run(log *slog.Logger) error {
 	k := kube.New(cs, cfg)
 	broker := events.NewBroker()
 	orch := orchestrator.New(st, k, broker, orchestrator.Options{
-		TokenSecret: cfg.TokenSecret, AgentTimeout: cfg.AgentTimeout + time.Minute, RuntimeTimeout: cfg.RuntimeTimeout,
+		TokenSecret: cfg.TokenSecret, AgentTimeout: cfg.AgentTimeout + time.Minute, RuntimeTimeout: cfg.RuntimeTimeout, PollInterval: cfg.PollInterval,
 	}, log)
 	// Pick up operations that were in flight when the previous process stopped.
 	if err := orch.Resume(ctx); err != nil {

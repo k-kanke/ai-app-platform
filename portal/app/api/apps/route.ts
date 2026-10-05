@@ -12,8 +12,11 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const key = req.headers.get('Idempotency-Key');
+  // PORTAL_STRATEGY=release makes apps created from this Portal use drafts, previews and releases.
+  const body = JSON.parse(await req.text());
+  if (process.env.PORTAL_STRATEGY && !body.strategy) body.strategy = process.env.PORTAL_STRATEGY;
   return forward(await fetch(`${CP}/api/v1/apps`, {
-    method: 'POST', body: await req.text(), cache: 'no-store',
+    method: 'POST', body: JSON.stringify(body), cache: 'no-store',
     headers: { 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) },
   }));
 }

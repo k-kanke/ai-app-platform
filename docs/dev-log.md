@@ -76,6 +76,21 @@ manifest のバケット名を、案内に書いた名前(`kanke-aap-backup`)に
 ### Design Question
 外部サービスの名前(バケット名など)を、ドキュメントの案内と実物で二重に持つと食い違う。manifest の値を確認する手順(`list` で 200 か)を最初のチェックに入れる。
 
+## 2026-10-05 - 実 Agent(Gemini CLI + gemini-3.8-flash)で初めて作成・変更
+
+### Context
+スタブ Agent を Gemini CLI(headless, `--approval-mode yolo`)に切り替え、ホームクラスタで「家族の買い物リスト」を自然言語の依頼から作成し、続けて「文字を大きく・チェック済みは薄い灰色に」と変更を依頼した。
+
+### Result
+- 作成: 約2分半で READY。Agent は自分でテストを12件書いて通し、`DATA_DIR`(`/data`)だけにデータを保存した。API を実際に叩いて、追加 / チェック / まとめて削除が動くことを確認。
+- 変更: 約1分で完了。snapshot Job → Agent Job → Runtime の入れ替えの順に動いた(ログ上)。
+- 隔離: Agent Job は Source PVC だけを mount。生成物の App Contract(`PORT`、`/healthz`、`/data`)も守られた。
+
+### 気づいたこと
+- 入力欄の名前(`text`)は Agent が決める。外から API を叩く用途では、仕様(OpenAPI など)を一緒に出させる必要がある。
+- 変更が「見た目として」依頼どおりかは、コードの grep では判断できない。Stage 2 の Preview と承認(人が見て OK を出す)が必要になる理由が実例になった。
+- 失敗時の詳細は Pod のログにしか残らない(Portal に出ない)。
+
 ## 未検証・既知の穴(Stage 1)
 - 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
 - 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる

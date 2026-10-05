@@ -1,0 +1,841 @@
+{
+ "label": "ML1 main: B2-B5 x2 (B1 x2 came from the pilot, same protocol)",
+ "protocol": {
+  "app": "bench",
+  "plan": [
+   "B2",
+   "B3",
+   "B4",
+   "B5"
+  ],
+  "reps": 2,
+  "prompts": {
+   "B2": "更新ボタンの色を青に変えて、押したときに少し動くようにして",
+   "B3": "洗濯物を干す時刻を設定できる入力欄を足して、次に開いたときも覚えているようにして",
+   "B4": "天気が取得できなかったときの表示を、もっと分かりやすくして",
+   "B5": "明日の朝の予報も見られるようにして"
+  },
+  "reset": "restore source from baseline + wipe data before every run",
+  "settle_s": 3.0
+ },
+ "trials": [
+  {
+   "i": 1,
+   "rep": 0,
+   "label": "B2",
+   "op": "d45dd27711cade7b",
+   "requested_at": "2026-10-05T07:13:54.102775+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  },
+  {
+   "i": 2,
+   "rep": 0,
+   "label": "B3",
+   "op": "fa814525a90c1a9d",
+   "requested_at": "2026-10-05T07:16:15.412969+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  },
+  {
+   "i": 3,
+   "rep": 0,
+   "label": "B4",
+   "op": "4106b420e01698be",
+   "requested_at": "2026-10-05T07:19:43.216476+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  },
+  {
+   "i": 4,
+   "rep": 0,
+   "label": "B5",
+   "op": "e1a76876cfaaeabb",
+   "requested_at": "2026-10-05T07:22:44.057990+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  },
+  {
+   "i": 5,
+   "rep": 1,
+   "label": "B2",
+   "op": "23f932342a32aead",
+   "requested_at": "2026-10-05T07:26:24.472308+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  },
+  {
+   "i": 6,
+   "rep": 1,
+   "label": "B3",
+   "op": "9bbfdd67d993d63c",
+   "requested_at": "2026-10-05T07:28:26.081355+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  },
+  {
+   "i": 7,
+   "rep": 1,
+   "label": "B4",
+   "op": "2de9803d4523aeea",
+   "requested_at": "2026-10-05T07:34:19.538027+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  },
+  {
+   "i": 8,
+   "rep": 1,
+   "label": "B5",
+   "op": "45f8591f06ddc55d",
+   "requested_at": "2026-10-05T07:37:27.329630+00:00",
+   "state": "SUCCEEDED",
+   "userMessage": ""
+  }
+ ],
+ "fetchedAt": "2026-10-05T07:40:32.554114+00:00",
+ "apps": {
+  "bench": {
+   "ops": [
+    {
+     "id": "45f8591f06ddc55d",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "明日の朝の予報も見られるようにして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"45f8591f06ddc55d\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791185853251,\"t_agent_start\":1791185853295,\"t_first_write\":1791185920874,\"t_last_write\":1791185963480,\"writes\":8,\"t_agent_end\":1791185997899,\"t_checks_end\":1791185998149,\"t_test_start\":1791185998203,\"t_test_end\":1791186000012,\"t_exit\":1791186000052}",
+     "createdAt": "2026-10-05T07:37:27.983366837Z",
+     "updatedAt": "2026-10-05T07:40:06.355200779Z"
+    },
+    {
+     "id": "2de9803d4523aeea",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "天気が取得できなかったときの表示を、もっと分かりやすくして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"2de9803d4523aeea\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791185665446,\"t_agent_start\":1791185665495,\"t_first_write\":1791185723550,\"t_last_write\":1791185779994,\"writes\":8,\"t_agent_end\":1791185808142,\"t_checks_end\":1791185808390,\"t_test_start\":1791185808450,\"t_test_end\":1791185818867,\"t_exit\":1791185818906}",
+     "createdAt": "2026-10-05T07:34:20.167961795Z",
+     "updatedAt": "2026-10-05T07:37:06.589515418Z"
+    },
+    {
+     "id": "9bbfdd67d993d63c",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "洗濯物を干す時刻を設定できる入力欄を足して、次に開いたときも覚えているようにして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"9bbfdd67d993d63c\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791185311762,\"t_agent_start\":1791185311806,\"t_first_write\":1791185536868,\"t_last_write\":1791185597272,\"writes\":7,\"t_agent_end\":1791185629922,\"t_checks_end\":1791185630195,\"t_test_start\":1791185630248,\"t_test_end\":1791185631890,\"t_exit\":1791185631930}",
+     "createdAt": "2026-10-05T07:28:26.4869948Z",
+     "updatedAt": "2026-10-05T07:33:59.21780765Z"
+    },
+    {
+     "id": "23f932342a32aead",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "更新ボタンの色を青に変えて、押したときに少し動くようにして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"23f932342a32aead\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791185190142,\"t_agent_start\":1791185190186,\"t_first_write\":1791185256108,\"t_last_write\":1791185262721,\"writes\":3,\"t_agent_end\":1791185275985,\"t_checks_end\":1791185276238,\"t_test_start\":1791185276294,\"t_test_end\":1791185277914,\"t_exit\":1791185277946}",
+     "createdAt": "2026-10-05T07:26:24.887528906Z",
+     "updatedAt": "2026-10-05T07:28:05.189354105Z"
+    },
+    {
+     "id": "e1a76876cfaaeabb",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "明日の朝の予報も見られるようにして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"e1a76876cfaaeabb\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791184969764,\"t_agent_start\":1791184969807,\"t_first_write\":1791185059601,\"t_last_write\":1791185134352,\"writes\":8,\"t_agent_end\":1791185154850,\"t_checks_end\":1791185155112,\"t_test_start\":1791185155166,\"t_test_end\":1791185156784,\"t_exit\":1791185156827}",
+     "createdAt": "2026-10-05T07:22:44.483769159Z",
+     "updatedAt": "2026-10-05T07:26:04.983414204Z"
+    },
+    {
+     "id": "4106b420e01698be",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "天気が取得できなかったときの表示を、もっと分かりやすくして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"4106b420e01698be\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791184788975,\"t_agent_start\":1791184789023,\"t_first_write\":1791184832157,\"t_last_write\":1791184897781,\"writes\":6,\"t_agent_end\":1791184925800,\"t_checks_end\":1791184926052,\"t_test_start\":1791184926110,\"t_test_end\":1791184936393,\"t_exit\":1791184936435}",
+     "createdAt": "2026-10-05T07:19:43.652486019Z",
+     "updatedAt": "2026-10-05T07:22:24.040568522Z"
+    },
+    {
+     "id": "fa814525a90c1a9d",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "洗濯物を干す時刻を設定できる入力欄を足して、次に開いたときも覚えているようにして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"fa814525a90c1a9d\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791184581109,\"t_agent_start\":1791184581156,\"t_first_write\":1791184642950,\"t_last_write\":1791184724923,\"writes\":12,\"t_agent_end\":1791184755919,\"t_checks_end\":1791184756165,\"t_test_start\":1791184756219,\"t_test_end\":1791184758032,\"t_exit\":1791184758073}",
+     "createdAt": "2026-10-05T07:16:15.841952534Z",
+     "updatedAt": "2026-10-05T07:19:26.295005822Z"
+    },
+    {
+     "id": "d45dd27711cade7b",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "更新ボタンの色を青に変えて、押したときに少し動くようにして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"d45dd27711cade7b\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791184439904,\"t_agent_start\":1791184439950,\"t_first_write\":1791184523729,\"t_last_write\":1791184532707,\"writes\":3,\"t_agent_end\":1791184546839,\"t_checks_end\":1791184547095,\"t_test_start\":1791184547154,\"t_test_end\":1791184548797,\"t_exit\":1791184548831}",
+     "createdAt": "2026-10-05T07:13:54.481021101Z",
+     "updatedAt": "2026-10-05T07:15:56.802990962Z"
+    },
+    {
+     "id": "bd96930dd3ff9a8b",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "文字をもっと大きくして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"bd96930dd3ff9a8b\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791184309698,\"t_agent_start\":1791184309742,\"t_first_write\":1791184356086,\"t_last_write\":1791184356086,\"writes\":1,\"t_agent_end\":1791184371089,\"t_checks_end\":1791184371345,\"t_test_start\":1791184371406,\"t_test_end\":1791184372952,\"t_exit\":1791184372991}",
+     "createdAt": "2026-10-05T07:11:44.382458639Z",
+     "updatedAt": "2026-10-05T07:13:00.617073613Z"
+    },
+    {
+     "id": "37cec03d492610a1",
+     "appId": "bench",
+     "kind": "modify",
+     "prompt": "文字をもっと大きくして",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"37cec03d492610a1\",\"kind\":\"modify\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791184201651,\"t_agent_start\":1791184201701,\"t_first_write\":1791184257614,\"t_last_write\":1791184257614,\"writes\":1,\"t_agent_end\":1791184274512,\"t_checks_end\":1791184274765,\"t_test_start\":1791184274824,\"t_test_end\":1791184276382,\"t_exit\":1791184276415}",
+     "createdAt": "2026-10-05T07:09:56.062272092Z",
+     "updatedAt": "2026-10-05T07:11:24.326516733Z"
+    },
+    {
+     "id": "351fa2f6dc1fd99e",
+     "appId": "bench",
+     "kind": "create",
+     "prompt": "毎晩洗濯物を干すのだが、夜に降るのか、明日降るのか毎回調べるのが面倒なので教えてくれるようにしてほしい。\nちなみに八王子市に住んでるので八王子市だけで良いです",
+     "state": "SUCCEEDED",
+     "step": "done",
+     "trace": "{\"v\":1,\"app\":\"bench\",\"op\":\"351fa2f6dc1fd99e\",\"kind\":\"create\",\"agent\":\"gemini\",\"model\":\"gemini-3.8-flash\",\"rc\":0,\"t_entry\":1791183977551,\"t_agent_start\":1791183977606,\"t_first_write\":1791184009692,\"t_last_write\":1791184135238,\"writes\":25,\"t_agent_end\":1791184165327,\"t_checks_end\":1791184165577,\"t_test_start\":1791184165631,\"t_test_end\":1791184167249,\"t_exit\":1791184167311}",
+     "createdAt": "2026-10-05T07:06:08.245423971Z",
+     "updatedAt": "2026-10-05T07:09:34.778092131Z"
+    }
+   ],
+   "events": [
+    {
+     "id": 68,
+     "appId": "bench",
+     "opId": "351fa2f6dc1fd99e",
+     "phase": "QUEUED",
+     "message": "依頼を受け付けました",
+     "createdAt": "2026-10-05T07:06:08.2465363Z"
+    },
+    {
+     "id": 69,
+     "appId": "bench",
+     "opId": "351fa2f6dc1fd99e",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:06:08.248403541Z"
+    },
+    {
+     "id": 70,
+     "appId": "bench",
+     "opId": "351fa2f6dc1fd99e",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:06:17.601942628Z"
+    },
+    {
+     "id": 71,
+     "appId": "bench",
+     "opId": "351fa2f6dc1fd99e",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:09:25.630370609Z"
+    },
+    {
+     "id": 72,
+     "appId": "bench",
+     "opId": "351fa2f6dc1fd99e",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:09:27.28209932Z"
+    },
+    {
+     "id": 73,
+     "appId": "bench",
+     "opId": "351fa2f6dc1fd99e",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:09:30.709502223Z"
+    },
+    {
+     "id": 74,
+     "appId": "bench",
+     "opId": "351fa2f6dc1fd99e",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:09:34.777556475Z"
+    },
+    {
+     "id": 75,
+     "appId": "bench",
+     "opId": "37cec03d492610a1",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:09:56.063642157Z"
+    },
+    {
+     "id": 76,
+     "appId": "bench",
+     "opId": "37cec03d492610a1",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:09:56.064982951Z"
+    },
+    {
+     "id": 77,
+     "appId": "bench",
+     "opId": "37cec03d492610a1",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:10:01.696707364Z"
+    },
+    {
+     "id": 78,
+     "appId": "bench",
+     "opId": "37cec03d492610a1",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:11:14.822548243Z"
+    },
+    {
+     "id": 79,
+     "appId": "bench",
+     "opId": "37cec03d492610a1",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:11:16.40543199Z"
+    },
+    {
+     "id": 80,
+     "appId": "bench",
+     "opId": "37cec03d492610a1",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:11:20.252916374Z"
+    },
+    {
+     "id": 81,
+     "appId": "bench",
+     "opId": "37cec03d492610a1",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:11:24.323643494Z"
+    },
+    {
+     "id": 82,
+     "appId": "bench",
+     "opId": "bd96930dd3ff9a8b",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:11:44.385672676Z"
+    },
+    {
+     "id": 83,
+     "appId": "bench",
+     "opId": "bd96930dd3ff9a8b",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:11:44.389187936Z"
+    },
+    {
+     "id": 84,
+     "appId": "bench",
+     "opId": "bd96930dd3ff9a8b",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:11:49.737453517Z"
+    },
+    {
+     "id": 85,
+     "appId": "bench",
+     "opId": "bd96930dd3ff9a8b",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:12:51.405248306Z"
+    },
+    {
+     "id": 86,
+     "appId": "bench",
+     "opId": "bd96930dd3ff9a8b",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:12:52.981766261Z"
+    },
+    {
+     "id": 87,
+     "appId": "bench",
+     "opId": "bd96930dd3ff9a8b",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:12:56.551580202Z"
+    },
+    {
+     "id": 88,
+     "appId": "bench",
+     "opId": "bd96930dd3ff9a8b",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:13:00.616467067Z"
+    },
+    {
+     "id": 89,
+     "appId": "bench",
+     "opId": "d45dd27711cade7b",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:13:54.482482958Z"
+    },
+    {
+     "id": 90,
+     "appId": "bench",
+     "opId": "d45dd27711cade7b",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:13:54.483671125Z"
+    },
+    {
+     "id": 91,
+     "appId": "bench",
+     "opId": "d45dd27711cade7b",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:13:59.94552167Z"
+    },
+    {
+     "id": 92,
+     "appId": "bench",
+     "opId": "d45dd27711cade7b",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:15:47.152637096Z"
+    },
+    {
+     "id": 93,
+     "appId": "bench",
+     "opId": "d45dd27711cade7b",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:15:48.822236563Z"
+    },
+    {
+     "id": 94,
+     "appId": "bench",
+     "opId": "d45dd27711cade7b",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:15:52.741981837Z"
+    },
+    {
+     "id": 95,
+     "appId": "bench",
+     "opId": "d45dd27711cade7b",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:15:56.802214711Z"
+    },
+    {
+     "id": 96,
+     "appId": "bench",
+     "opId": "fa814525a90c1a9d",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:16:15.843287248Z"
+    },
+    {
+     "id": 97,
+     "appId": "bench",
+     "opId": "fa814525a90c1a9d",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:16:15.844409913Z"
+    },
+    {
+     "id": 98,
+     "appId": "bench",
+     "opId": "fa814525a90c1a9d",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:16:21.151764215Z"
+    },
+    {
+     "id": 99,
+     "appId": "bench",
+     "opId": "fa814525a90c1a9d",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:19:16.217464492Z"
+    },
+    {
+     "id": 100,
+     "appId": "bench",
+     "opId": "fa814525a90c1a9d",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:19:18.063219623Z"
+    },
+    {
+     "id": 101,
+     "appId": "bench",
+     "opId": "fa814525a90c1a9d",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:19:22.232897544Z"
+    },
+    {
+     "id": 102,
+     "appId": "bench",
+     "opId": "fa814525a90c1a9d",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:19:26.294362657Z"
+    },
+    {
+     "id": 103,
+     "appId": "bench",
+     "opId": "4106b420e01698be",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:19:43.653749471Z"
+    },
+    {
+     "id": 104,
+     "appId": "bench",
+     "opId": "4106b420e01698be",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:19:43.654975105Z"
+    },
+    {
+     "id": 105,
+     "appId": "bench",
+     "opId": "4106b420e01698be",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:19:49.018722489Z"
+    },
+    {
+     "id": 106,
+     "appId": "bench",
+     "opId": "4106b420e01698be",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:22:06.108298182Z"
+    },
+    {
+     "id": 107,
+     "appId": "bench",
+     "opId": "4106b420e01698be",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:22:16.423404267Z"
+    },
+    {
+     "id": 108,
+     "appId": "bench",
+     "opId": "4106b420e01698be",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:22:19.983346761Z"
+    },
+    {
+     "id": 109,
+     "appId": "bench",
+     "opId": "4106b420e01698be",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:22:24.039956446Z"
+    },
+    {
+     "id": 110,
+     "appId": "bench",
+     "opId": "e1a76876cfaaeabb",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:22:44.485597355Z"
+    },
+    {
+     "id": 111,
+     "appId": "bench",
+     "opId": "e1a76876cfaaeabb",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:22:44.487096772Z"
+    },
+    {
+     "id": 112,
+     "appId": "bench",
+     "opId": "e1a76876cfaaeabb",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:22:49.802893056Z"
+    },
+    {
+     "id": 113,
+     "appId": "bench",
+     "opId": "e1a76876cfaaeabb",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:25:55.164431957Z"
+    },
+    {
+     "id": 114,
+     "appId": "bench",
+     "opId": "e1a76876cfaaeabb",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:25:56.817165845Z"
+    },
+    {
+     "id": 115,
+     "appId": "bench",
+     "opId": "e1a76876cfaaeabb",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:26:00.914263806Z"
+    },
+    {
+     "id": 116,
+     "appId": "bench",
+     "opId": "e1a76876cfaaeabb",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:26:04.982862013Z"
+    },
+    {
+     "id": 117,
+     "appId": "bench",
+     "opId": "23f932342a32aead",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:26:24.888864836Z"
+    },
+    {
+     "id": 118,
+     "appId": "bench",
+     "opId": "23f932342a32aead",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:26:24.889967587Z"
+    },
+    {
+     "id": 119,
+     "appId": "bench",
+     "opId": "23f932342a32aead",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:26:30.181683847Z"
+    },
+    {
+     "id": 120,
+     "appId": "bench",
+     "opId": "23f932342a32aead",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:27:56.292687268Z"
+    },
+    {
+     "id": 121,
+     "appId": "bench",
+     "opId": "23f932342a32aead",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:27:57.936374904Z"
+    },
+    {
+     "id": 122,
+     "appId": "bench",
+     "opId": "23f932342a32aead",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:28:01.124494322Z"
+    },
+    {
+     "id": 123,
+     "appId": "bench",
+     "opId": "23f932342a32aead",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:28:05.188838997Z"
+    },
+    {
+     "id": 124,
+     "appId": "bench",
+     "opId": "9bbfdd67d993d63c",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:28:26.488393371Z"
+    },
+    {
+     "id": 125,
+     "appId": "bench",
+     "opId": "9bbfdd67d993d63c",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:28:26.489553357Z"
+    },
+    {
+     "id": 126,
+     "appId": "bench",
+     "opId": "9bbfdd67d993d63c",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:28:31.801851008Z"
+    },
+    {
+     "id": 127,
+     "appId": "bench",
+     "opId": "9bbfdd67d993d63c",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:33:50.246703393Z"
+    },
+    {
+     "id": 128,
+     "appId": "bench",
+     "opId": "9bbfdd67d993d63c",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:33:51.920449337Z"
+    },
+    {
+     "id": 129,
+     "appId": "bench",
+     "opId": "9bbfdd67d993d63c",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:33:55.1555395Z"
+    },
+    {
+     "id": 130,
+     "appId": "bench",
+     "opId": "9bbfdd67d993d63c",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:33:59.217240327Z"
+    },
+    {
+     "id": 131,
+     "appId": "bench",
+     "opId": "2de9803d4523aeea",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:34:20.170147309Z"
+    },
+    {
+     "id": 132,
+     "appId": "bench",
+     "opId": "2de9803d4523aeea",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:34:20.172528277Z"
+    },
+    {
+     "id": 133,
+     "appId": "bench",
+     "opId": "2de9803d4523aeea",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:34:25.490476061Z"
+    },
+    {
+     "id": 134,
+     "appId": "bench",
+     "opId": "2de9803d4523aeea",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:36:48.448400057Z"
+    },
+    {
+     "id": 135,
+     "appId": "bench",
+     "opId": "2de9803d4523aeea",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:36:58.896355656Z"
+    },
+    {
+     "id": 136,
+     "appId": "bench",
+     "opId": "2de9803d4523aeea",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:37:02.525595408Z"
+    },
+    {
+     "id": 137,
+     "appId": "bench",
+     "opId": "2de9803d4523aeea",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:37:06.588973822Z"
+    },
+    {
+     "id": 138,
+     "appId": "bench",
+     "opId": "45f8591f06ddc55d",
+     "phase": "QUEUED",
+     "message": "変更の依頼を受け付けました",
+     "createdAt": "2026-10-05T07:37:27.985011188Z"
+    },
+    {
+     "id": 139,
+     "appId": "bench",
+     "opId": "45f8591f06ddc55d",
+     "phase": "AGENT_STARTING",
+     "message": "準備しています",
+     "createdAt": "2026-10-05T07:37:27.986296467Z"
+    },
+    {
+     "id": 140,
+     "appId": "bench",
+     "opId": "45f8591f06ddc55d",
+     "phase": "GENERATING",
+     "message": "アプリを作っています",
+     "createdAt": "2026-10-05T07:37:33.290740298Z"
+    },
+    {
+     "id": 141,
+     "appId": "bench",
+     "opId": "45f8591f06ddc55d",
+     "phase": "TESTING",
+     "message": "動作を確認しています",
+     "createdAt": "2026-10-05T07:39:58.202063399Z"
+    },
+    {
+     "id": 142,
+     "appId": "bench",
+     "opId": "45f8591f06ddc55d",
+     "phase": "TESTING",
+     "message": "確認できました",
+     "createdAt": "2026-10-05T07:40:00.042500768Z"
+    },
+    {
+     "id": 143,
+     "appId": "bench",
+     "opId": "45f8591f06ddc55d",
+     "phase": "STARTING",
+     "message": "アプリを起動しています",
+     "createdAt": "2026-10-05T07:40:02.308995025Z"
+    },
+    {
+     "id": 144,
+     "appId": "bench",
+     "opId": "45f8591f06ddc55d",
+     "phase": "READY",
+     "message": "使えるようになりました",
+     "createdAt": "2026-10-05T07:40:06.354580302Z"
+    }
+   ]
+  }
+ }
+}

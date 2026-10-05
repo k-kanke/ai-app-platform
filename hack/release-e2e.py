@@ -121,8 +121,28 @@ spec:
     k("-n", TNS, "exec", "-i", "tools", "--", "sh", "-c", "cat > /tmp/probe.js", inp=PROBE_JS)
 
 
-def call(path_url, method="GET", body=None):
-    """HTTP from inside the cluster (the apps are only reachable there)."""
+REACH_LAG = []  # seconds between "the platform says Ready" and "the URL actually answers"
+
+
+def call(path_url, method="GET", body=None, retry_s=12):
+    """HTTP from inside the cluster (the apps are only reachable there).
+    Right after a pod becomes Ready, the Service route may lag by a moment (eventual consistency), so a
+    refused connection is retried for a few seconds and the wait is recorded."""
+    t0, first = time.time(), True
+    while True:
+        try:
+            out = _call_once(path_url, method, body)
+            if first is False:
+                REACH_LAG.append(round(time.time() - t0, 2))
+            return out
+        except RuntimeError as e:
+            first = False
+            if time.time() - t0 > retry_s or ("ECONNREFUSED" not in str(e) and "EAI_AGAIN" not in str(e) and "fetch failed" not in str(e)):
+                raise
+            time.sleep(0.25)
+
+
+def _call_once(path_url, method="GET", body=None):
     js = ("fetch(%s,{method:%s,headers:{'Content-Type':'application/json'},body:%s}).then(async r=>console.log(r.status+' '+await r.text()))"
           % (json.dumps(path_url), json.dumps(method), json.dumps(json.dumps(body)) if body is not None else "undefined"))
     out = k("-n", TNS, "exec", "tools", "--", "node", "-e", js).strip()
@@ -290,7 +310,10 @@ def main():
     print("     in-place: broken page served for about %.1fs (%d samples)" % (m_inp["broken_seconds"], m_inp["broken_samples"]))
     check("E1: the in-place strategy DID show the broken page to its users (the problem this solves)", m_inp["broken_samples"] > 0, m_inp)
 
+    M["reachability_lag_s"] = REACH_LAG
     say("summary")
+    if REACH_LAG:
+        print("  Ready -> reachable lag seen %d time(s): %s s" % (len(REACH_LAG), REACH_LAG))
     print("  E1 broken page seen by users   in-place: %.1fs   release: %.1fs" % (m_inp["broken_seconds"], m_rel["broken_seconds"]))
     print("  create -> preview %.1fs | modify -> preview %.1fs | approve -> live %.1fs (unavailable %.2fs) | rollback %.1fs (unavailable %.2fs)" % (
         M["create_to_preview_s"], M["modify_to_preview_s"], M["approve_to_live_s"], m_app["longest_unavailable_s"], M["rollback_s"], m_rb["longest_unavailable_s"]))

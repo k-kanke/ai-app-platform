@@ -78,10 +78,20 @@ flowchart LR
 | 工夫 | 零コピー共有、常駐の Preview、ホットリロード、優先度(PriorityClass) | 検証 Job、データの予行演習、見守り時間、Data のスナップショット |
 
 - **GitOps の利点(履歴、戻せる、不変)を、昇格の瞬間にだけ取り戻す。**
-- **インフラの核: ストレージの CoW**(深掘りの主題)。Release を作業ツリーの reflink クローン、Preview のデータを本番データのクローンにし、
-  アプリごとの容量を XFS のプロジェクトクォータで強制する。詳細は [`deep-dive-preview-release.md`](deep-dive-preview-release.md) §0。
+- **深掘りの主軸: 内側のループの遅延を、実測の内訳から削る**([`deep-dive-inner-loop-latency.md`](deep-dive-inner-loop-latency.md))。
+  指標は TTFC(最初の変化が見えるまで)と TTVC(検証まで)。総時間の約 8 割は LLM でインフラでは縮まらない(✅)。
+  縮められるのは、LLM を待つ間に家族が見ているもの: 共有 volume とライブ Preview で、最初の変化が約 56〜70 s → 約 25 s(🔜、n=1 の観察)。
+- **支える側: ストレージの CoW**(遅い道)。Release を作業ツリーの reflink クローン、Preview のデータを本番データのクローンにし、
+  アプリごとの容量を XFS のプロジェクトクォータで強制する。**修正サイクルは速くしないが**、Release のディスクと暴走の封じ込めに効く
+  ([`deep-dive-preview-release.md`](deep-dive-preview-release.md) §0)。
 
-| 実測(✅、Docker の Linux VM。実機は🔜) | 値 |
+| 実測(✅): 遅延の内訳(変更の中央値 n=3) | 値 |
+|---|---|
+| 合計 / 準備 / Agent の作業 / テスト / 本番の起動 | 70 s / 5 s / **57 s(81%)** / 4 s / 4 s |
+| インフラを完璧にしたときの上限 | 70 s → 57 s(−19%)。**総時間は大きく縮まない** |
+| 最初のファイルを書くのは(n=1) | 開始から約 20 s。ライブ Preview なら最初の変化は約 25 s |
+
+| 実測(✅、Docker の Linux VM。実機は🔜): ストレージの CoW | 値 |
 |---|---|
 | 9,193 ファイル / 324 MiB の Release 作成: ext4 全コピー(今)→ XFS reflink | 1.07 s / +352.7 MiB → **0.22 s / +5.8 MiB**(約 5 倍速く、ディスク約 1/60) |
 | 200 MiB のデータを別 PVC へクローン | **9 ms、追加 0 MiB**。1 MiB 書き換えると +1 MiB、本番側は無変更 |

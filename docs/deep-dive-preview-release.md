@@ -1,4 +1,10 @@
-# 深掘り実装案: 「AI の成果物を何度も直したい」から、Preview と Release を設計する
+# 深掘り実装案(安全・コスト側): Preview と Release、ストレージの CoW
+
+> **位置づけ**: 発表の**主軸は「速さ」**で、その深掘りは [`deep-dive-inner-loop-latency.md`](deep-dive-inner-loop-latency.md)。
+> この文書は、**決定したあと(遅い道)を支える**設計: Release の不変性、Data のスナップショット、容量の強制、暴走の封じ込め。
+> 実測で分かったとおり、**ストレージの CoW(§0)は、修正サイクルそのものは速くしない**(速さに効くのは、共有 volume とライブ Preview。CoW ではない)。
+> CoW が効くのは、Release のコスト(ディスク・時間)と安全。
+
 
 CNDW 学生プロポーザルの技術的な深掘りの案。**ユースケースから出発し、インフラの設計に落とす**。
 現状の構成は [`architecture.md`](architecture.md)、実装中に起きた問題は [`dev-log.md`](dev-log.md)。

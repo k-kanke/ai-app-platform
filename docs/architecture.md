@@ -431,6 +431,8 @@ sequenceDiagram
 (命令型 → 収束)を実験で語れる。どちらも、**未実施の実験**(A: 状態のずれ / B: 悪意のある依頼)を先にやれば、
 「最初の設計 → 実際に壊れた → 原因 → 設計変更 → 検証」の筋が完成する。
 
+> **深掘りの主軸(速さ): 修正サイクルの遅延を、実測の内訳から削る**: [`deep-dive-inner-loop-latency.md`](deep-dive-inner-loop-latency.md)
+>
 > **深掘りの実装案(ユースケース起点)**: [`deep-dive-preview-release.md`](deep-dive-preview-release.md) —
 > 「AI の成果物を何度も直したい」から Preview と Release を設計する。C を、実際に起きたユースケースから組み直したもの。
 

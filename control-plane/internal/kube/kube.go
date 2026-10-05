@@ -218,6 +218,9 @@ func (c *Client) EnsureAgentJob(ctx context.Context, a AgentSpec) error {
 		Resources:       limits("1", "1Gi"),
 		SecurityContext: restrictedSC(AppUID),
 	}
+	if c.cfg.GeminiModel != "" {
+		ctr.Env = append(ctr.Env, corev1.EnvVar{Name: "AAP_GEMINI_MODEL", Value: c.cfg.GeminiModel})
+	}
 	if c.cfg.AgentSecretName != "" {
 		ctr.EnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
 			LocalObjectReference: corev1.LocalObjectReference{Name: c.cfg.AgentSecretName}, Optional: boolp(true)}}}

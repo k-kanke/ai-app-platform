@@ -47,7 +47,7 @@ func newEnv(t *testing.T, st *store.Store, cs *fake.Clientset) *env {
 	if cs == nil {
 		cs = fake.NewSimpleClientset()
 	}
-	cfg := config.Config{Namespace: ns, AgentImage: "agent", RuntimeImage: "rt", HelperImage: "busybox", SourceSize: "1Gi", DataSize: "1Gi",
+	cfg := config.Config{Namespace: ns, Agent: "gemini", GeminiModel: "gemini-test-model", AgentImage: "agent", RuntimeImage: "rt", HelperImage: "busybox", SourceSize: "1Gi", DataSize: "1Gi",
 		AgentTimeout: time.Minute, InternalURL: "http://cp"}
 	broker := events.NewBroker()
 	orch := orchestrator.New(st, kube.New(cs, cfg), broker, orchestrator.Options{
@@ -159,6 +159,13 @@ func TestCreateAppEndToEnd(t *testing.T) {
 	pod := jobs.Items[0].Spec.Template.Spec
 	if len(pod.Volumes) != 1 || pod.Volumes[0].PersistentVolumeClaim.ClaimName != "aap-gen-meal-src" {
 		t.Fatalf("agent must mount only the source PVC: %+v", pod.Volumes)
+	}
+	env := map[string]string{}
+	for _, e := range pod.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	if env["AAP_AGENT"] != "gemini" || env["AAP_GEMINI_MODEL"] != "gemini-test-model" {
+		t.Fatalf("agent/model not passed to the Job: %v", env)
 	}
 	if pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken {
 		t.Fatal("agent must not get a service account token")

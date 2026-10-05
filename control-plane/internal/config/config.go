@@ -27,7 +27,8 @@ type Config struct {
 	SourceSize   string
 	DataSize     string
 
-	Agent              string // which agent script the Agent Job runs: template | claude
+	Agent              string // which agent script the Agent Job runs: template | gemini | claude
+	GeminiModel        string // optional model for AAP_AGENT=gemini (empty = CLI default)
 	AgentTimeout       time.Duration
 	RuntimeTimeout     time.Duration
 	AgentSecretName    string // optional Secret holding LLM credentials, mounted only into Agent Jobs
@@ -58,6 +59,7 @@ func Load() (Config, error) {
 		IngressHostPattern: os.Getenv("AAP_INGRESS_HOST_PATTERN"),
 		Kubeconfig:         os.Getenv("AAP_KUBECONFIG"),
 		Agent:              env("AAP_AGENT", "template"),
+		GeminiModel:        os.Getenv("AAP_GEMINI_MODEL"),
 	}
 	mins, err := strconv.Atoi(env("AAP_AGENT_TIMEOUT_MINUTES", "20"))
 	if err != nil || mins <= 0 {

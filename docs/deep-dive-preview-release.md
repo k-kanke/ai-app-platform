@@ -61,8 +61,8 @@ stateDiagram-v2
 ```
 
 - **本番は、承認されるまで一切変わらない。** Agent が触るのは Draft だけ。
-- アプリを**最初に作るとき**は承認なしで Release 1 にする(守るべき既存データも利用者もいないため)。
-  変更からは必ずプレビューを経る。
+- **作成も変更も同じ流れ**: 作成したときも、まずお試し版ができ、直して、承認した時点で Release 1 が生まれ、
+  本番が始まる(§3.5)。「最初の作成だけ特別」という例外を作らない。
 
 ### 3.2 ストレージ(volume 案)
 
@@ -146,6 +146,44 @@ sequenceDiagram
   変更でデータの形が変わっていても、**release 単位で整合した状態に戻れる**。
 - 1 件の Release は `{番号, 内容ハッシュ, Data Snapshot の ID, 依頼, 承認者, 日時}` で 1 組。
 
+### 3.5 作成も同じ流れ(母が作ったその場で、お試しして、すぐ直せる)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M as 母
+    participant P as Portal
+    participant C as Control Plane
+    participant A as Agent Job
+    participant PV as Preview Runtime
+
+    M->>P: 「洗濯物を干せるか教えてほしい」
+    P->>C: POST /apps
+    Note over C: 本番はまだ無い。Data も空
+    C->>A: Agent Job (draft/ を新規に作る)
+    A-->>C: 成功
+    C->>PV: Preview Runtime (空の Preview Data)
+    C-->>P: お試し版ができました
+    M->>PV: 使ってみる。「文字が小さい」
+    M->>P: 「文字を大きくして」
+    P->>C: POST /apps/{id}/changes
+    C->>A: Agent Job (draft/ を直す)
+    C->>PV: Preview を更新
+    M->>PV: 見て、OK
+    M->>P: これで使う
+    P->>C: POST /apps/{id}/approve
+    Note over C: ここで初めて Release 1 と Data PVC と本番を作る
+    C-->>M: 家族のみんなが使えるようになりました
+```
+
+- 承認するまで、**そのアプリは家族の一覧に「作成中」としてだけ現れる**(本番の URL は無い)。
+  途中のアプリを、他の家族が使ってしまうことがない。
+- 失敗しても、本番が中途半端に残らない(いまは作成に失敗すると PVC と失敗したアプリが残る)。
+- お試し版の Data は空で始まる。本番ができる前なので、コピーするものがない。
+  入力した内容は承認で本番に持ち越さない(§6)。
+- **直すまでの速さ**は、インフラではなく Agent(LLM)が決める。実測では、作成が約 2 分半、変更が約 1 分。
+  プレビューの起動そのものは数秒(Pod 1 つ)で、ここでは遅くならない。
+
 ---
 
 ## 4. 2 つの案を作って比べる(深掘りの核)
@@ -172,7 +210,7 @@ sequenceDiagram
 |---|---|
 | `control-plane/internal/store` | `releases` テーブル(app_id, n, source_hash, data_snapshot, prompt, approved_by, created_at)。apps に `live_release`、draft の状態。列追加は既存のマイグレーション方式に倣う |
 | `control-plane/internal/kube` | `EnsureRuntime` に Release 番号を渡す(subPath を `releases/<n>` に)。`EnsurePreview`、helper の役割 `datacopy` / `release` / `dsnap-restore` を追加。PVC `-pdata` と `-dsnap`。Preview 用 Ingress(`{id}-preview.<ドメイン>`) |
-| `control-plane/internal/orchestrator` | `runBuild` を分割: `runDraft`(Agent + Preview)/ `runApprove`(Release)/ `runRollback`。**各手順を冪等に**(`releases/<n>.tmp` に作ってから rename、名前は決定的) |
+| `control-plane/internal/orchestrator` | **作成の流れを組み替える**: Agent → Preview で止まり、承認で初めて Data PVC / Release 1 / 本番を作る。`runBuild` を分割: `runDraft`(Agent + Preview)/ `runApprove`(Release)/ `runRollback`。**各手順を冪等に**(`releases/<n>.tmp` に作ってから rename、名前は決定的) |
 | `control-plane/internal/api` | `POST /apps/{id}/approve`、`/discard`、`/rollback`、`GET /apps/{id}/releases`。`/changes` の意味が「本番を変える」から「下書きを作る」に変わる(互換性に注意) |
 | `portal` | 変更後の画面: 「お試し版を開く / これでOK / もう少し直す / やめる」。「前の版に戻す」の一覧。承認者は Access のヘッダー(`Cf-Access-Authenticated-User-Email`)から記録 |
 | `kubernetes-platform` | NetworkPolicy に `role=preview` を追加(runtime と同じ egress / ingress)。Access のワイルドカードは既存の `*.kanke-aap-gen.com` でカバー済み。予約語に `*-preview` を追加 |
@@ -184,7 +222,7 @@ sequenceDiagram
 
 | 判断 | 理由 |
 |---|---|
-| 最初の作成だけ承認なしで Release 1 | 守るべきデータも利用者もまだいない。母に「承認」を最初から押させない |
+| **作成も変更も、必ずお試しを経る** | 試行錯誤がいちばん多いのは最初の版。例外を作らないほうが、仕組みも画面も単純。最初の承認で Release 1 と本番ができる(旧案の「作成は承認なし」は取り下げた) |
 | Preview は**本番データのコピー**で動く | 空のデータでは「いつもの表で見える」を確認できない。直接 mount すると、試した入力が本番を汚す |
 | Preview の書き込みは捨てる | 承認で本番に混ぜない。混ぜるとデータの形の違いを持ち込む |
 | 本番の参照先は Deployment の subPath で明示 | シンボリックリンクは subPath 経由で安全に扱えない。参照先がクラスタ上の宣言として残る |
@@ -204,7 +242,7 @@ sequenceDiagram
 | E4 | **volume 案 と image 案** | 同じアプリで承認を 10 回。時間、ディスク、メモリ、ロールバックの時間、コンポーネント数を比べる | 承認に要する時間 / ディスクの増え方 / 戻す時間 | A は速くて軽い、B は再現性 |
 | E5 | **Preview の隔離** | Preview から本番 Data への書き込み、本番 Service への通信、Agent から releases の書き込みを試みる | すべて失敗すること | 全て遮断 |
 | E6 | **承認の途中障害** | 承認の各手順の間で Control Plane を kill / helper Job を失敗させる | 再開後に同じハッシュの同じ Release に収束するか。中途半端な Release が残るか | 収束する |
-| E7 | **実ユーザー** | 母に実際に使ってもらい、「お試し版」を理解できるか、承認までの回数を記録 | 修正の回数 / 迷った箇所 / 承認の理解 | 記録そのものが成果 |
+| E7 | **実ユーザー** | 母に**作るところから**使ってもらい、お試し版を理解できるか、承認までに何回直したかを記録 | 修正の回数 / 迷った箇所 / 承認の理解 | 記録そのものが成果 |
 
 E1・E3・E6 が、発表の山場になる。**いまの設計(Stage 1)で E1 を先に測っておく**と、「導入前」の数字が手に入る。
 
@@ -215,7 +253,7 @@ E1・E3・E6 が、発表の山場になる。**いまの設計(Stage 1)で E1 �
 | M | 内容 | 完了の条件 |
 |---|---|---|
 | M0 | **Stage 1 の E1 の測定**(導入前の数字) | 天気アプリの台本で、壊れた応答の回数と時間が出ている |
-| M1 | データモデル + 本番を `releases/1` に固定(Preview なし)。作成が Release 1 を作る | 既存のテストが通り、本番が release のディレクトリで動く |
+| M1 | データモデル + 本番を `releases/1` に固定(Preview なし)。承認相当の処理で Release 1 を作る | 既存のテストが通り、本番が release のディレクトリで動く |
 | M2 | Preview の実行(別 URL、データのコピー) + NetworkPolicy | E5 が通る |
 | M3 | approve / discard / rollback の API + Portal の画面 | e2e で、お試し → 承認 → 反映 → ロールバックが通る |
 | M4 | E1〜E3、E6 の実施と dev-log | 数字と失敗の記録がある |
@@ -234,6 +272,8 @@ E1・E3・E6 が、発表の山場になる。**いまの設計(Stage 1)で E1 �
 | 「お試し版」であることの表示 | 生成アプリに印を埋め込めない | Portal の画面で明示。ホスト名に `-preview` を含める |
 | 承認者 | Access のメールを記録するが、誰でも承認できる | 当面は家族全員。権限は未決 |
 | データの形が変わる変更 | 本番に反映した直後は Snapshot でしか戻せない | Data Snapshot を必須にする。マイグレーションの方針(後方互換を基本)を App Contract に書く |
+| お試し版を Portal の中で見せるか、別タブか | iframe に埋め込むと「見ながら直す」が 1 画面で済むが、Access のセッション(Cookie はホスト名ごと)と埋め込みの可否を実機で確認する必要がある。まず別タブで始める |
+| 承認前のアプリの見え方 | 承認までは、作った本人にだけ「作成中」と出す。家族の一覧に出すかは未決(Access のメールで作成者を記録できる) |
 | `/changes` の意味の変更 | 既存のクライアントの動作が変わる | Portal 以外のクライアントはまだ無い |
 | 再現性(volume 案) | 実行基盤 image の更新で挙動が変わりうる | 基盤 image のダイジェストを Release に記録する案を検討 |
 
@@ -242,7 +282,7 @@ E1・E3・E6 が、発表の山場になる。**いまの設計(Stage 1)で E1 �
 ## 10. 発表での筋(案)
 
 1. 母の紙の表 → アプリになる(ここまでの Platform)
-2. **実際に触ると、何度も直したくなった**(天気アプリで 3 回。U1)
+2. **実際に触ると、作ったその場から何度も直したくなった**(天気アプリで 3 回。U1)
 3. そのたびに本番が壊れ、直ったかも分からなかった(U2。E1 の「導入前」の数字)
 4. 設計: 下書きと本番を分ける / 承認で不変の Release にする / データは別に保つ(§3)
 5. **2 つの作り方を比べた**(volume と image。E4)

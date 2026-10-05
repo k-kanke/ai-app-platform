@@ -130,6 +130,25 @@ Gemini の月額上限に達したとき、Portal に出たのは `agent failed:
 分類は正規表現の対応表で、Agent のログの書式が変わると外れる。Agent 自身に「利用者向けの失敗理由」を構造化して出させる(終了コード / JSON)方が堅いか。
 削除はデータも消す。誤って消した場合の戻し先は毎晩のバックアップ(7 日)だけで、アプリ単位で戻す手順はまだ手作業。
 
+## 2026-10-05 - ストレージのベンチマークで、比較の基準が間違っていた
+
+### Context
+Release 作成を `cp -a` から reflink に変える案を、`hack/bench-storage.sh` で測った(ext4 全コピー / XFS 全コピー / XFS reflink / LVM thin / クォータ)。
+
+### Problem
+最初の結果で、「XFS の全コピー」が追加ディスク 5.8 MiB で済んでいた。さらに、クォータの判定が**逆**になっていた(制限が効いているのに「効いていない」と表示)。LVM thin と ext4 のプロジェクトクォータは、カーネルの機能不足で測れなかった。
+
+### Why
+- GNU の `cp` は既定が `--reflink=auto` で、XFS では黙ってクローンする。「全コピー」の基準が全コピーになっていなかった。
+- スクリプトが `set -o pipefail` のもとで `dd | grep -q` を判定に使い、`dd` の失敗(= 制限が効いた)が判定を反転させた。
+- 実験環境(Docker Desktop の Linux VM)のカーネルは dm-thin-pool とクォータの機能を持たない。
+
+### Result
+`cp --reflink=never` を基準にし、判定は出力を変数に取ってから行うように直した。測れない項目は、測れないと表に書き、実機で測る課題にした。直したあとの値が、`deep-dive-preview-release.md` §0 の表。
+
+### Design Question
+**ベンチマークの「基準」を疑う**。速い方式が出たときは、まず基準が正しいかを確かめる。測れないものは、数字を空欄にせず「測れなかった」と書く。
+
 ## 未検証・既知の穴(Stage 1)
 - 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
 - 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる

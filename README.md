@@ -9,7 +9,7 @@
 | ディレクトリ | 役割 |
 |---|---|
 | `control-plane/` | Go。REST + SSE API、SQLite(Platform State)、Kubernetes API 経由で App のライフサイクルを管理 |
-| `agent-runtime/` | Agent Job の image。Source Workspace だけを編集する。`AAP_AGENT=template`(スタブ) / `claude`(実 Agent) |
+| `agent-runtime/` | Agent Job の image。Source Workspace だけを編集する。`AAP_AGENT=template`(スタブ) / `gemini`(Gemini CLI) / `claude`(Claude Code) |
 | `app-runtime/` | 生成された Source を実行する汎用 Runtime image(`npm start`) |
 | `portal/` | スマホ向け UI(Next.js) |
 | `hack/e2e-kind.sh` | 使い捨て kind クラスタでの end-to-end 検証 |

@@ -26,7 +26,7 @@ jobs:
       matrix:
         include:
           - { name: control-plane, context: control-plane }
-          - { name: agent-runtime, context: agent-runtime }
+          - { name: agent-runtime, context: agent-runtime, build_args: "INSTALL_GEMINI=true" }
           - { name: app-runtime, context: app-runtime }
           - { name: portal, context: portal }
     steps:
@@ -40,6 +40,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          build-args: ${{ matrix.build_args }}
           push: true
           platforms: linux/amd64
           tags: |

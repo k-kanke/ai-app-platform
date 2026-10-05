@@ -14,7 +14,19 @@ die() { echo "ERROR: $*" >&2; post_event "$1" "$2"; exit 1; }
 
 cd /workspace || exit 1
 mkdir -p "$HOME"
+# Same instructions under every name an agent CLI looks for (platform-owned content).
 cp /opt/aap/AGENTS.md /workspace/AGENTS.md
+cp /opt/aap/AGENTS.md /workspace/GEMINI.md
+
+# Gemini CLI: no telemetry / usage statistics / update checks from inside the Job.
+mkdir -p "$HOME/.gemini"
+cat > "$HOME/.gemini/settings.json" <<'JSON'
+{
+  "general": { "disableAutoUpdate": true, "disableUpdateNag": true },
+  "privacy": { "usageStatisticsEnabled": false },
+  "telemetry": { "enabled": false }
+}
+JSON
 
 post_event GENERATING "アプリを作っています"
 echo "== agent=${AAP_AGENT} kind=${AAP_OP_KIND} app=${AAP_APP_ID}"

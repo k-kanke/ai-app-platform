@@ -324,27 +324,45 @@ func (c *Client) EnsureRuntime(ctx context.Context, appID, restartToken string) 
 		return fmt.Errorf("create service: %w", err)
 	}
 
-	if c.cfg.IngressClass != "" && c.cfg.IngressHostPattern != "" {
-		class := c.cfg.IngressClass
-		pt := networkingv1.PathTypePrefix
-		ing := &networkingv1.Ingress{
-			ObjectMeta: metav1.ObjectMeta{Name: base(appID), Namespace: ns, Labels: labels(appID, "runtime", "")},
-			Spec: networkingv1.IngressSpec{
-				IngressClassName: &class,
-				Rules: []networkingv1.IngressRule{{
-					Host: strings.ReplaceAll(c.cfg.IngressHostPattern, "{id}", appID),
-					IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{
-						Paths: []networkingv1.HTTPIngressPath{{Path: "/", PathType: &pt, Backend: networkingv1.IngressBackend{
-							Service: &networkingv1.IngressServiceBackend{Name: Service(appID), Port: networkingv1.ServiceBackendPort{Name: "http"}}}}},
-					}},
-				}},
-			},
-		}
-		if _, err := c.cs.NetworkingV1().Ingresses(ns).Create(ctx, ing, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
-			return fmt.Errorf("create ingress: %w", err)
-		}
+	_, err := c.EnsureIngress(ctx, appID)
+	return err
+}
+
+// IngressEnabled reports whether apps get a public Ingress (class + host pattern set).
+func (c *Client) IngressEnabled() bool {
+	return c.cfg.IngressClass != "" && c.cfg.IngressHostPattern != ""
+}
+
+// EnsureIngress creates the app's Ingress if it does not exist yet. It never
+// modifies an existing one. created reports whether a new Ingress was made.
+func (c *Client) EnsureIngress(ctx context.Context, appID string) (created bool, err error) {
+	if !c.IngressEnabled() {
+		return false, nil
 	}
-	return nil
+	ns := c.cfg.Namespace
+	class := c.cfg.IngressClass
+	pt := networkingv1.PathTypePrefix
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: base(appID), Namespace: ns, Labels: labels(appID, "runtime", "")},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: &class,
+			Rules: []networkingv1.IngressRule{{
+				Host: strings.ReplaceAll(c.cfg.IngressHostPattern, "{id}", appID),
+				IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{
+					Paths: []networkingv1.HTTPIngressPath{{Path: "/", PathType: &pt, Backend: networkingv1.IngressBackend{
+						Service: &networkingv1.IngressServiceBackend{Name: Service(appID), Port: networkingv1.ServiceBackendPort{Name: "http"}}}}},
+				}},
+			}},
+		},
+	}
+	_, err = c.cs.NetworkingV1().Ingresses(ns).Create(ctx, ing, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("create ingress: %w", err)
+	}
+	return true, nil
 }
 
 func withReadOnlyRoot(sc *corev1.SecurityContext) *corev1.SecurityContext {

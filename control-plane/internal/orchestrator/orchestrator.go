@@ -310,3 +310,51 @@ func (o *Orchestrator) runDelete(ctx context.Context, op store.Operation) error 
 	o.Emit(ctx, op.AppID, op.ID, store.PhaseDeleted, "削除しました")
 	return nil
 }
+
+// ReconcileIngresses makes sure every READY app has its public Ingress. It covers
+// apps created before Ingress was configured and Ingresses removed by hand.
+// Apps with an operation in flight are skipped; that operation owns their resources.
+func (o *Orchestrator) ReconcileIngresses(ctx context.Context) error {
+	if !o.kube.IngressEnabled() {
+		return nil
+	}
+	apps, err := o.st.ListApps(ctx)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, a := range apps {
+		if a.Phase != store.PhaseReady {
+			continue
+		}
+		if _, err := o.st.ActiveOperation(ctx, a.ID); err == nil {
+			continue
+		}
+		created, err := o.kube.EnsureIngress(ctx, a.ID)
+		if err != nil {
+			o.log.Error("ensure ingress", "app", a.ID, "err", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if created {
+			o.log.Info("created missing ingress", "app", a.ID)
+		}
+	}
+	return firstErr
+}
+
+// RunReconcileLoop reconciles once immediately and then every interval until ctx ends.
+func (o *Orchestrator) RunReconcileLoop(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		_ = o.ReconcileIngresses(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}

@@ -67,6 +67,8 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	go orch.RunReconcileLoop(ctx, 5*time.Minute)
+
 	srv := &http.Server{
 		Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second,
 		Handler: (&api.Server{St: st, Kube: k, Orch: orch, Broker: broker, BaseCtx: ctx, AppURLTemplate: cfg.AppURLTemplate}).Handler(),

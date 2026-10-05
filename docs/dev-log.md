@@ -42,6 +42,23 @@ Agent Job は `npm test` で失敗 → Operation FAILED → restore Job が走�
 ### Design Question
 想定していた「テストを通るが起動しない」ケース(runtime が Ready にならず restore する経路)は、このシナリオでは通っていない。ユニットテスト(fake)では確認済みだが、実クラスタでは未確認。テストを持たない App での確認を追加する。
 
+## 2026-10-05 - 公開設定の前に作ったアプリに Ingress がなかった
+
+### Context
+Cloudflare Tunnel で公開するため、アプリごとの Ingress(`{id}.kanke-aap-gen.com`)を Control Plane が作る設定を追加した。Ingress の作成は `EnsureRuntime`(create / modify のとき)だけで行っていた。
+
+### Problem
+設定追加の前に作ったアプリ(`app-2ef57e`)は、一度変更するまで Ingress が作られず、Portal の「開く」の先が存在しない。
+
+### Why
+Ingress を「作成時の副作用」としてしか扱っておらず、「あるべき状態」として継続的に確認していなかった。設定変更や Ingress の手動削除でも同じ状態のずれが起こる。
+
+### Temporary Fix
+`ReconcileIngresses`: 起動時と5分おきに、READY のアプリ(進行中の操作があるものは除く)の Ingress を確認し、なければ作る。作成のみで、既存の Ingress は更新しない。
+
+### Design Question
+これは小さな「望ましい状態へ収束させるループ」で、plan-2 §12 の Reconciliation の最初の実例。現状は Ingress だけだが、Runtime / Service の消失(Experiment C)にも同じ形が要りそうか。ループを種類ごとに増やすのか、一つの Reconciler にまとめるのかが次の論点。
+
 ## 未検証・既知の穴(Stage 1)
 - 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
 - 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる

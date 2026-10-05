@@ -5,6 +5,10 @@ set -euo pipefail
 cd /workspace
 prompt="${AAP_PROMPT:-}"
 
+if [[ "$prompt" == *FAIL_QUOTA* ]]; then
+  # Mimics Gemini CLI hitting the project's spending cap.
+  echo "Attempt 1 failed with status 429. Your project has exceeded its monthly spending cap." >&2; exit 1
+fi
 if [[ "$prompt" == *FAIL_AGENT* ]]; then
   echo "stub agent: simulated failure"; exit 1
 fi

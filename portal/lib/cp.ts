@@ -1,7 +1,7 @@
 // Server-side access to the Control Plane. The browser never talks to it directly.
 export const CP = process.env.CONTROL_PLANE_URL ?? 'http://localhost:8080';
 
-export type Operation = { id: string; kind: string; state: string; step: string; error?: string };
+export type Operation = { id: string; kind: string; state: string; step: string; prompt: string; error?: string; userMessage?: string };
 export type AppView = {
   id: string; name: string; phase: string; url?: string; operation?: Operation;
 };

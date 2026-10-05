@@ -29,6 +29,7 @@ const (
 	RoleSnapshot = "snap"
 	RoleRestore  = "restore"
 	RoleAgent    = "agent"
+	RoleWipe     = "wipe"
 )
 
 type JobPhase string
@@ -165,6 +166,11 @@ test -d "$src"
 find /src/%[3]s -mindepth 1 -delete
 cp -a "$src"/. /src/%[3]s/
 chown -R %[4]d:%[4]d /src/%[3]s`, SubPathSnapshots, opID, SubPathCurrent, AppUID)
+	case RoleWipe:
+		// Retry of a failed create: drop whatever a half-finished run left in the source.
+		script = fmt.Sprintf(`set -e
+find /src/%[1]s -mindepth 1 -delete
+chown %[2]d:%[2]d /src/%[1]s`, SubPathCurrent, AppUID)
 	default:
 		return fmt.Errorf("unknown helper role %q", role)
 	}
@@ -227,6 +233,17 @@ func (c *Client) EnsureAgentJob(ctx context.Context, a AgentSpec) error {
 	}
 	spec.Containers = []corev1.Container{ctr}
 	return c.createJob(ctx, j)
+}
+
+// AgentLogTail returns the last lines of the Agent Job's pod log (for diagnosing failures).
+func (c *Client) AgentLogTail(ctx context.Context, appID, opID string, lines int64) (string, error) {
+	sel := fmt.Sprintf("%s=%s,%s=%s,%s=%s", LabelAppID, appID, LabelOpID, opID, LabelRole, RoleAgent)
+	pods, err := c.cs.CoreV1().Pods(c.cfg.Namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
+	if err != nil || len(pods.Items) == 0 {
+		return "", err
+	}
+	raw, err := c.cs.CoreV1().Pods(c.cfg.Namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{TailLines: &lines}).Do(ctx).Raw()
+	return string(raw), err
 }
 
 // JobStatus reports a Job's phase; reason carries a failure message.

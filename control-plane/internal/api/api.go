@@ -39,6 +39,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/apps/{id}", s.getApp)
 	m.HandleFunc("DELETE /api/v1/apps/{id}", s.deleteApp)
 	m.HandleFunc("POST /api/v1/apps/{id}/changes", s.changeApp)
+	m.HandleFunc("POST /api/v1/apps/{id}/retry", s.retryApp)
 	m.HandleFunc("GET /api/v1/apps/{id}/operations", s.listOps)
 	m.HandleFunc("GET /api/v1/apps/{id}/events", s.sse)
 	m.HandleFunc("POST /internal/v1/operations/{op}/events", s.agentEvent)
@@ -98,6 +99,9 @@ func (s *Server) view(ctx context.Context, a store.App, withActual bool) appView
 		v.Operation = &op
 	} else if ops, err := s.St.ListOperations(ctx, a.ID); err == nil && len(ops) > 0 {
 		v.Operation = &ops[0]
+	}
+	if v.Operation != nil {
+		v.Operation.Detail = "" // raw logs are for operators: GET /operations
 	}
 	return v
 }
@@ -228,6 +232,55 @@ func (s *Server) changeApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if created {
 		s.Orch.Emit(s.BaseCtx, id, op.ID, store.PhaseQueued, "変更の依頼を受け付けました")
+		s.Orch.Submit(s.BaseCtx, op)
+	}
+	writeJSON(w, 202, map[string]any{"operation": op})
+}
+
+// retryApp starts a failed create over, from an empty source, optionally with a reworded request.
+func (s *Server) retryApp(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	a, err := s.St.GetApp(ctx, id)
+	if err != nil || a.Phase == store.PhaseDeleted {
+		writeErr(w, 404, "app not found")
+		return
+	}
+	if a.Phase != store.PhaseFailed {
+		writeErr(w, 409, "app is %s; only a failed app can be retried", a.Phase)
+		return
+	}
+	if _, err := s.St.ActiveOperation(ctx, id); err == nil {
+		writeErr(w, 409, "別の作業が進行中です")
+		return
+	}
+	var in struct{ Prompt string }
+	_ = decode(r, &in) // body is optional
+	prompt := strings.TrimSpace(in.Prompt)
+	if prompt == "" {
+		ops, err := s.St.ListOperations(ctx, id)
+		if err != nil {
+			writeErr(w, 500, "%v", err)
+			return
+		}
+		for _, o := range ops { // newest first
+			if o.Kind == store.KindCreate {
+				prompt = o.Prompt
+				break
+			}
+		}
+	}
+	if prompt == "" {
+		writeErr(w, 409, "no original request to retry")
+		return
+	}
+	op, created, err := s.St.CreateOperation(ctx, store.Operation{ID: newID(), AppID: id, Kind: store.KindCreate, Prompt: prompt, Purge: true, IdempotencyKey: r.Header.Get("Idempotency-Key")})
+	if err != nil {
+		writeErr(w, 500, "%v", err)
+		return
+	}
+	if created {
+		s.Orch.Emit(s.BaseCtx, id, op.ID, store.PhaseQueued, "もう一度作ります")
 		s.Orch.Submit(s.BaseCtx, op)
 	}
 	writeJSON(w, 202, map[string]any{"operation": op})

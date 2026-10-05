@@ -24,16 +24,19 @@ say "build + load images"
 docker build -q -t aap-control-plane:dev control-plane >/dev/null
 docker build -q -t aap-agent-runtime:dev agent-runtime >/dev/null
 docker build -q -t aap-app-runtime:dev app-runtime >/dev/null
-kind load docker-image --name aap-dev aap-control-plane:dev aap-agent-runtime:dev aap-app-runtime:dev >/dev/null
+docker build -q -t aap-portal:dev portal >/dev/null
+kind load docker-image --name aap-dev aap-control-plane:dev aap-agent-runtime:dev aap-app-runtime:dev aap-portal:dev >/dev/null
 
 say "deploy platform manifests from kubernetes-platform"
 kubectl kustomize "$KP/manifests/ai-app-platform" \
- | sed -e 's#ghcr.io/k-kanke/ai-app-platform/control-plane:latest#aap-control-plane:dev#' \
+ | sed -e 's#local-path#standard#g' \
+       -e 's#ghcr.io/k-kanke/ai-app-platform/control-plane:latest#aap-control-plane:dev#' \
        -e 's#ghcr.io/k-kanke/ai-app-platform/agent-runtime:latest#aap-agent-runtime:dev#' \
        -e 's#ghcr.io/k-kanke/ai-app-platform/app-runtime:latest#aap-app-runtime:dev#' \
+       -e 's#ghcr.io/k-kanke/ai-app-platform/portal:latest#aap-portal:dev#' \
  | $K apply -f - >/dev/null
 $K -n platform-system create secret generic control-plane-secrets --from-literal=token-secret=e2e-secret --dry-run=client -o yaml | $K apply -f - >/dev/null
-$K -n platform-system set env deploy/control-plane AAP_RUNTIME_TIMEOUT_SECONDS=75 >/dev/null
+$K -n platform-system set env deploy/control-plane AAP_RUNTIME_TIMEOUT_SECONDS=75 AAP_AGENT=template >/dev/null
 $K -n platform-system rollout restart deploy/control-plane >/dev/null
 $K -n platform-system rollout status deploy/control-plane --timeout=120s
 
@@ -107,8 +110,12 @@ $K -n aap-apps get jobs -l aap.dev/app-id=note,aap.dev/role=restore -o name | gr
 say "6. Control Plane restart mid-operation (Experiment B)"
 post /api/v1/apps '{"id":"memo","name":"メモ","prompt":"家族で使えるメモ帳"}' >/dev/null
 sleep 2
-$K -n platform-system delete pod -l app.kubernetes.io/name=control-plane --wait=false >/dev/null
-$K -n platform-system rollout status deploy/control-plane --timeout=120s >/dev/null
+old=$($K -n platform-system get pod -l app.kubernetes.io/name=control-plane -o jsonpath='{.items[0].metadata.name}')
+$K -n platform-system delete pod "$old" --wait=false >/dev/null
+# Wait for the OLD pod to be gone and the NEW one Ready; `rollout status` alone can return
+# while the old pod is still terminating (the port-forward would then bind to it and die).
+$K -n platform-system wait --for=delete pod/"$old" --timeout=120s >/dev/null
+$K -n platform-system wait --for=condition=Ready pod -l app.kubernetes.io/name=control-plane --timeout=120s >/dev/null
 kill $PF 2>/dev/null || true; $K -n platform-system port-forward svc/control-plane 18080:8080 >/tmp/aap-pf.log 2>&1 & PF=$!
 for i in $(seq 30); do curl -fs $API/healthz >/dev/null 2>&1 && break; sleep 1; done
 r=$(wait_ready memo 240) || fail "memo after restart: $r"
@@ -119,6 +126,29 @@ say "7. delete keeps data unless purged"
 curl -fsS -X DELETE $API/api/v1/apps/memo >/dev/null; sleep 6
 $K -n aap-apps get pvc aap-gen-memo-data >/dev/null && ok "data PVC kept after delete" || fail "PVC deleted"
 $K -n aap-apps get deploy aap-gen-memo >/dev/null 2>&1 && fail "runtime still exists" || ok "runtime removed"
+
+say "8. failures explain themselves in plain language"
+post /api/v1/apps '{"id":"quota","name":"上限","prompt":"FAIL_QUOTA 天気アプリ"}' >/dev/null
+for i in $(seq 120); do [ "$(phase quota | cut -d' ' -f1)" = FAILED ] && break; sleep 2; done
+msg=$(curl -fs $API/api/v1/apps/quota | python3 -c 'import sys,json;print(json.load(sys.stdin)["operation"].get("userMessage",""))')
+echo "  user message: $msg"
+case "$msg" in *利用上限*) ok "spending-cap failure is explained";; *) fail "message was: $msg";; esac
+curl -fs $API/api/v1/apps/quota | python3 -c 'import sys,json;d=json.load(sys.stdin);sys.exit(1 if "detail" in (d.get("operation") or {}) else 0)' && ok "raw logs are not exposed to users" || fail "operator detail leaked into the app view"
+curl -fs $API/api/v1/apps/quota/operations | grep -q 'spending cap' && ok "raw log kept for operators" || fail "operator detail missing"
+
+say "9. retry a failed create from scratch with a reworded request"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $API/api/v1/apps/quota/retry -H 'Content-Type: application/json' -d '{"prompt":"家族の天気アプリ"}')
+[ "$code" = 202 ] && ok "retry accepted" || fail "retry status $code"
+r=$(wait_ready quota 240) || fail "retry: $r"
+[ "$r" = "READY SUCCEEDED" ] && ok "retried app is READY" || fail "retry result: $r"
+$K -n aap-apps get jobs -l aap.dev/app-id=quota,aap.dev/role=wipe -o name | grep -q wipe && ok "source was wiped before the retry" || fail "no wipe job"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST $API/api/v1/apps/quota/retry); [ "$code" = 409 ] && ok "a READY app cannot be 'retried'" || fail "expected 409, got $code"
+
+say "10. delete with purge removes the data too"
+curl -fsS -X DELETE "$API/api/v1/apps/quota?purge=true" >/dev/null
+for i in $(seq 30); do [ "$(curl -s -o /dev/null -w '%{http_code}' $API/api/v1/apps/quota)" = 404 ] && break; sleep 2; done
+sleep 8
+$K -n aap-apps get pvc aap-gen-quota-data >/dev/null 2>&1 && fail "data PVC still exists" || ok "data PVC removed"
 
 say "ALL SCENARIOS PASSED"
 if [ -z "${KEEP:-}" ]; then

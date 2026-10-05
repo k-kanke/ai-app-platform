@@ -35,6 +35,30 @@ export default function View({ initial }: { initial: AppView }) {
   const busy = app.operation && (app.operation.state === 'PENDING' || app.operation.state === 'RUNNING');
   const idx = STEPS.findIndex(([p]) => p === app.phase);
   const failedChange = app.phase === 'READY' && app.operation?.state === 'FAILED';
+  const failedCreate = app.phase === 'FAILED';
+  const reason = app.operation?.userMessage;
+  const [retryPrompt, setRetryPrompt] = useState(app.operation?.prompt ?? '');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const retryKey = useRef(crypto.randomUUID());
+
+  async function retry(e: React.FormEvent) {
+    e.preventDefault(); setErr('');
+    const r = await fetch(`/api/apps/${app.id}/retry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': retryKey.current },
+      body: JSON.stringify({ prompt: retryPrompt }),
+    });
+    if (r.ok) { retryKey.current = crypto.randomUUID(); setLog([]); refresh(); }
+    else setErr((await r.json().catch(() => ({}))).error ?? 'うまく送れませんでした');
+  }
+
+  async function remove() {
+    setDeleting(true); setErr('');
+    const r = await fetch(`/api/apps/${app.id}`, { method: 'DELETE' });
+    if (r.ok) { location.href = '/'; return; }
+    setDeleting(false);
+    setErr((await r.json().catch(() => ({}))).error ?? '削除できませんでした');
+  }
 
   async function change(e: React.FormEvent) {
     e.preventDefault(); setErr('');
@@ -63,8 +87,18 @@ export default function View({ initial }: { initial: AppView }) {
       )}
 
       {app.phase === 'READY' && app.url && <p><a className="btn primary" href={app.url}>アプリを開く</a></p>}
-      {failedChange && <p className="err">前回の変更はうまくいかなかったので、元のアプリに戻しました。言い方を変えてもう一度試せます。</p>}
-      {app.phase === 'FAILED' && <p className="err">うまく作れませんでした。内容を変えてもう一度作り直してください。</p>}
+      {failedChange && (
+        <p className="err">前回の変更はうまくいかなかったので、元のアプリに戻しました。{reason ? <><br />{reason}</> : '言い方を変えてもう一度試せます。'}</p>
+      )}
+      {failedCreate && !busy && (
+        <form onSubmit={retry} className="card">
+          <p className="err" style={{ marginTop: 0 }}>{reason ?? 'うまく作れませんでした。'}</p>
+          <label htmlFor="r" style={{ marginTop: 0 }}>内容を直して、もう一度作れます</label>
+          <textarea id="r" value={retryPrompt} onChange={(e) => setRetryPrompt(e.target.value)} required />
+          {err && <p className="err">{err}</p>}
+          <button className="btn primary" disabled={!retryPrompt.trim()}>もう一度作る</button>
+        </form>
+      )}
 
       {app.phase === 'READY' && !busy && (
         <form onSubmit={change} className="card">
@@ -73,6 +107,25 @@ export default function View({ initial }: { initial: AppView }) {
           {err && <p className="err">{err}</p>}
           <button className="btn primary" disabled={!prompt.trim()}>変更をお願いする</button>
         </form>
+      )}
+
+      {!busy && (
+        <div style={{ marginTop: 32 }}>
+          {!confirmDelete ? (
+            <button className="btn" onClick={() => setConfirmDelete(true)}>このアプリを削除する</button>
+          ) : (
+            <div className="card">
+              <p style={{ marginTop: 0 }}><b>「{app.name}」を削除します。</b><br />入力したデータも消えて、元に戻せません。</p>
+              {err && <p className="err">{err}</p>}
+              <div className="btns">
+                <button className="btn" disabled={deleting} onClick={() => setConfirmDelete(false)}>やめる</button>
+                <button className="btn primary" style={{ background: '#c0392b', borderColor: '#c0392b' }} disabled={deleting} onClick={remove}>
+                  {deleting ? '削除しています…' : '削除する'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {log.length > 0 && (

@@ -20,5 +20,19 @@ fi
 args=(--approval-mode yolo --output-format text)
 [ -n "${AAP_GEMINI_MODEL:-}" ] && args+=(--model "$AAP_GEMINI_MODEL")
 
-# The Job has an activeDeadline too; this keeps a hung CLI from eating all of it silently.
-exec timeout 1200 gemini "${args[@]}" -p "$task"
+# Gemini CLI retries a failing request ~10 times with backoff (minutes). Errors that retrying
+# cannot fix (spending cap, bad key) must fail fast so the family sees the reason right away.
+log=$(mktemp)
+timeout 1200 gemini "${args[@]}" -p "$task" > >(tee -a "$log") 2>&1 &
+pid=$!
+( while kill -0 "$pid" 2>/dev/null; do
+    if grep -qiE "spending cap|API key not valid|API_KEY_INVALID|PERMISSION_DENIED|exceeded your current quota" "$log"; then
+      echo "AAP: unrecoverable API error detected, stopping the agent" >&2
+      kill "$pid" 2>/dev/null; exit 0
+    fi
+    sleep 2
+  done ) &
+watcher=$!
+wait "$pid"; rc=$?
+kill "$watcher" 2>/dev/null || true
+exit "$rc"

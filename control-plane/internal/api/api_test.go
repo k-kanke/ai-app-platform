@@ -71,6 +71,11 @@ func (e *env) kubelet(ctx context.Context) {
 		jobs, _ := e.cs.BatchV1().Jobs(ns).List(ctx, metav1.ListOptions{})
 		for i := range jobs.Items {
 			j := jobs.Items[i]
+			// Like the real Job controller: each Job has a pod carrying the template labels.
+			if _, err := e.cs.CoreV1().Pods(ns).Get(ctx, j.Name+"-pod", metav1.GetOptions{}); err != nil {
+				e.cs.CoreV1().Pods(ns).Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+					Name: j.Name + "-pod", Namespace: ns, Labels: j.Spec.Template.Labels}}, metav1.CreateOptions{})
+			}
 			if j.Status.Succeeded > 0 || j.Status.Failed > 0 {
 				continue
 			}
@@ -336,5 +341,60 @@ func TestValidation(t *testing.T) {
 		if c, _ := e.do("POST", "/api/v1/apps", b, nil); c != 400 {
 			t.Fatalf("%v: want 400, got %d", b, c)
 		}
+	}
+}
+
+// A failed create explains itself, can be retried from scratch (optionally reworded), and can be deleted.
+func TestFailedCreateIsExplainedAndRetryable(t *testing.T) {
+	e := newEnv(t, nil, nil)
+	e.failAgent.Store(true)
+	e.do("POST", "/api/v1/apps", map[string]string{"id": "weather", "name": "w", "prompt": "天気を教えて"}, nil)
+	app := e.waitPhase("weather", "FAILED")
+	op := app["operation"].(map[string]any)
+	if op["state"] != "FAILED" || op["userMessage"] == nil || op["userMessage"] == "" {
+		t.Fatalf("failed op should carry a user message: %v", op)
+	}
+	if _, has := op["detail"]; has {
+		t.Fatal("operator detail must not be exposed in the app view")
+	}
+	// Detail is available to operators.
+	_, ops := e.do("GET", "/api/v1/apps/weather/operations", nil, nil)
+	if _, has := ops["operations"].([]any)[0].(map[string]any)["detail"]; !has {
+		t.Fatal("operations endpoint should include the raw detail")
+	}
+
+	// Retry is refused for apps that are not failed.
+	e.do("POST", "/api/v1/apps", map[string]string{"id": "ok", "name": "o", "prompt": "p"}, nil) // will also fail (failAgent)
+	e.failAgent.Store(false)
+	code, out := e.do("POST", "/api/v1/apps/weather/retry", map[string]string{"prompt": "八王子の天気だけでいい"}, nil)
+	if code != 202 {
+		t.Fatalf("retry: %d %v", code, out)
+	}
+	app = e.waitPhase("weather", "READY")
+	if app["operation"].(map[string]any)["prompt"] != "八王子の天気だけでいい" {
+		t.Fatalf("retry should use the reworded request: %v", app["operation"])
+	}
+	// The retry wiped the half-finished source first.
+	wipes, _ := e.cs.BatchV1().Jobs(ns).List(context.Background(), metav1.ListOptions{LabelSelector: kube.LabelRole + "=wipe"})
+	if len(wipes.Items) != 1 {
+		t.Fatalf("want 1 wipe job, got %d", len(wipes.Items))
+	}
+	if c, _ := e.do("POST", "/api/v1/apps/weather/retry", nil, nil); c != 409 {
+		t.Fatalf("retry of a READY app should be 409, got %d", c)
+	}
+}
+
+func TestRetryWithoutBodyReusesOriginalRequest(t *testing.T) {
+	e := newEnv(t, nil, nil)
+	e.failAgent.Store(true)
+	e.do("POST", "/api/v1/apps", map[string]string{"id": "shop", "name": "s", "prompt": "買い物リスト"}, nil)
+	e.waitPhase("shop", "FAILED")
+	e.failAgent.Store(false)
+	if c, _ := e.do("POST", "/api/v1/apps/shop/retry", nil, nil); c != 202 {
+		t.Fatalf("status %d", c)
+	}
+	app := e.waitPhase("shop", "READY")
+	if app["operation"].(map[string]any)["prompt"] != "買い物リスト" {
+		t.Fatalf("original request not reused: %v", app["operation"])
 	}
 }

@@ -112,6 +112,24 @@ Agent は「サーバーのコードが動くこと」しか見ていない。�
 ### Design Question
 「変更が届いた」ことを Platform が保証すべきか。例: アプリのホストで配信する際に Platform 側で `Cache-Control` を上書きする(ingress の snippet は無効のため、プロキシ層が要る)。もう1つ、画面の不具合(見た目)を機械的に検出する手段(ヘッドレスブラウザでの確認)を Stage 2 の Preview に入れるか。
 
+## 2026-10-05 - 失敗の理由が分からない
+
+### Context
+Gemini の月額上限に達したとき、Portal に出たのは `agent failed: BackoffLimitExceeded: Job has reached the specified backoff limit` だけ。利用者は原因が分からず、調べるには `kubectl logs` が必要だった。Agent は 429 を約 5 分間リトライし続けた。失敗したアプリは削除も再試行もできなかった(運用者が API で消した)。
+
+### Problem
+「失敗」を Platform が知っていても、**なぜか**を伝える層がなかった。母が一人でこれを解決することはできない。
+
+### Temporary Fix
+- Control Plane が、失敗した Agent Pod のログ末尾を読み(読み取り専用の RBAC を追加)、原因を分類して日本語の文言にする(利用上限 / キー / 時間切れ / つながらない / テスト失敗 / その他)。ログ本体は運用者向けの `detail` に保存し、利用者向けの画面には出さない。
+- 上限超過・キー不正は再試行しても直らないので、Agent 側が検知して数秒で止める。
+- `POST /apps/{id}/retry`: 失敗した作成を、ソースを空にして(wipe)やり直す。依頼文は直して送れる。
+- Portal: 失敗の理由、「もう一度作る」(依頼文を編集可)、「削除する」(データも消える旨を確認する 2 段階)。
+
+### Design Question
+分類は正規表現の対応表で、Agent のログの書式が変わると外れる。Agent 自身に「利用者向けの失敗理由」を構造化して出させる(終了コード / JSON)方が堅いか。
+削除はデータも消す。誤って消した場合の戻し先は毎晩のバックアップ(7 日)だけで、アプリ単位で戻す手順はまだ手作業。
+
 ## 未検証・既知の穴(Stage 1)
 - 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
 - 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる

@@ -30,7 +30,8 @@ POST   /api/v1/apps                 {id?, name, prompt}   → 202  (Idempotency-
 GET    /api/v1/apps
 GET    /api/v1/apps/{id}            DB の意図 + Kubernetes の実状態
 POST   /api/v1/apps/{id}/changes    {prompt}              → 202
+POST   /api/v1/apps/{id}/retry      {prompt?}             → 202  (FAILED の作成を、空のソースからやり直す)
 DELETE /api/v1/apps/{id}[?purge=true]
-GET    /api/v1/apps/{id}/operations
+GET    /api/v1/apps/{id}/operations    失敗時の userMessage(家族向け)と detail(ログ末尾、運用者向け)
 GET    /api/v1/apps/{id}/events     SSE (Last-Event-ID で再開)
 ```

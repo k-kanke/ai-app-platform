@@ -59,8 +59,25 @@ Ingress を「作成時の副作用」としてしか扱っておらず、「あ
 ### Design Question
 これは小さな「望ましい状態へ収束させるループ」で、plan-2 §12 の Reconciliation の最初の実例。現状は Ingress だけだが、Runtime / Service の消失(Experiment C)にも同じ形が要りそうか。ループを種類ごとに増やすのか、一つの Reconciler にまとめるのかが次の論点。
 
+## 2026-10-05 - バックアップの初回が AccessDenied
+
+### Context
+restic で worker の `/opt/local-path-provisioner` を Cloudflare R2 に毎晩バックアップする CronJob を追加。初回を手動実行した。
+
+### Problem
+`Stat(<config/>) failed: Access Denied`。R2 のキー(32 桁 / 64 桁の 16 進数)の形式は正しかった。
+
+### Why
+manifest のバケット名を、案内に書いた名前(`kanke-aap-backup`)にしていたが、実際に作られたバケットは `kanke-aap-gen-backup`。存在しないバケットや権限のないバケットは、R2 ではどちらも `403 AccessDenied` になり、原因が「キー」か「名前」か区別できなかった。Secret の値は見ずに、形式の確認と SigV4 での `list` の HTTP ステータス(実在する名前だと 200)で切り分けた。
+
+### Result
+名前を直して初回成功(`restic check` も通過)。復元の練習(最新スナップショットを使い捨ての領域に戻す Job)も成功し、Control Plane の SQLite(`-wal` / `-shm` 含む)、各アプリの Source / Data、`meals.json` が戻ることを確認した。
+
+### Design Question
+外部サービスの名前(バケット名など)を、ドキュメントの案内と実物で二重に持つと食い違う。manifest の値を確認する手順(`list` で 200 か)を最初のチェックに入れる。
+
 ## 未検証・既知の穴(Stage 1)
 - 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
 - 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる
-- Data / SQLite の定期バックアップは manifest 側に未実装(母に使わせる前に必須)
+- バックアップは R2 に毎晩取得済み(`docs/backup-restore.md`)。失敗時の自動通知と、SQLite の安全なダンプは未実装
 - Control Plane の認証なし(Portal 経由 + NetworkPolicy のみ)。Tailscale 等の前提

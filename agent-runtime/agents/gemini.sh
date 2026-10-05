@@ -23,11 +23,16 @@ args=(--approval-mode yolo --output-format text)
 # Gemini CLI retries a failing request ~10 times with backoff (minutes). Errors that retrying
 # cannot fix (spending cap, bad key) must fail fast so the family sees the reason right away.
 log=$(mktemp)
-timeout 1200 gemini "${args[@]}" -p "$task" > >(tee -a "$log") 2>&1 &
+timeout "${AAP_AGENT_STEP_TIMEOUT_S:-600}" gemini "${args[@]}" -p "$task" > >(tee -a "$log") 2>&1 &
 pid=$!
 ( while kill -0 "$pid" 2>/dev/null; do
     if grep -qiE "spending cap|API key not valid|API_KEY_INVALID|PERMISSION_DENIED|exceeded your current quota" "$log"; then
       echo "AAP: unrecoverable API error detected, stopping the agent" >&2
+      kill "$pid" 2>/dev/null; exit 0
+    fi
+    # The API keeps answering 5xx: the CLI would back off and retry for many minutes. Stop after a few.
+    if [ "$(grep -ciE "failed with status 5[0-9][0-9]" "$log")" -ge "${AAP_AGENT_MAX_5XX:-6}" ]; then
+      echo "AAP: the API keeps failing with 5xx, stopping the agent" >&2
       kill "$pid" 2>/dev/null; exit 0
     fi
     sleep 2

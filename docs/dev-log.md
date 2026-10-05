@@ -149,6 +149,31 @@ Release 作成を `cp -a` から reflink に変える案を、`hack/bench-storag
 ### Design Question
 **ベンチマークの「基準」を疑う**。速い方式が出たときは、まず基準が正しいかを確かめる。測れないものは、数字を空欄にせず「測れなかった」と書く。
 
+## 2026-10-05 - 実 Agent が Web 検索で 15 分以上固まった
+
+### Context
+release 方式のアプリを、ホームクラスタで実際の Gemini Agent で作る計測(`hack/release-live.py`)。依頼は天気アプリ(天気予報を取ってきて表示する)。
+
+### Problem
+Agent の Job が 15 分以上終わらず、計測が止まった。通常の作成は 2〜3 分。
+
+### Actual State
+ログに `WebSearchToolInvocation` と `status: 500 ... Internal error encountered` が並び、`Attempt N failed with status 500. Retrying with backoff...` を繰り返していた。
+Agent が「天気 API を調べる」ために Gemini CLI の Web 検索ツールを使い、その検索バックエンドが 500 を返し続けた。CPU はほぼ 0(待っているだけ)。
+作成の操作は RUNNING のままで、**進行中の操作がある間は削除も拒否される(409)** ため、運用者が Job を手で止めるまで、アプリを消せなかった。
+
+### Why
+- 以前の対策(上限超過・キー不正で即停止)は、5xx には効かなかった。5xx は「待てば直る」ことが多いので、CLI の再試行に任せていた。
+- Web 検索は、アプリを作るのに必須ではない。Agent の `egress` を 443 だけ許したままで、検索ツールも使えた。
+
+### Temporary Fix
+- Agent の設定で **Web ツール(`google_web_search`、`web_fetch`)を拒否**。小さなアプリを作るのに要らず、固まる原因と、取得したページ経由のプロンプトインジェクションの経路を減らす。
+- Agent の 1 回の最大時間を **10 分**(`AAP_AGENT_STEP_TIMEOUT_S`、以前は 20 分)。実測した最長の実行は約 5.5 分(M-009)。
+- 5xx が 6 回続いたら止める(`AAP_AGENT_MAX_5XX`)。理由は「AI につながりませんでした」。
+
+### Design Question
+**進行中の操作を取り消す手段がない。** Job が固まると、削除もできず、期限(20 分)まで待つ。操作の「中止」(Job を止めて、下書きを戻す)を API に足すべきか。
+
 ## 未検証・既知の穴(Stage 1)
 - 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
 - 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる

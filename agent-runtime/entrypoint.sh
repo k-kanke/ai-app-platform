@@ -65,12 +65,15 @@ cp /opt/aap/AGENTS.md /workspace/AGENTS.md
 cp /opt/aap/AGENTS.md /workspace/GEMINI.md
 
 # Gemini CLI: no telemetry / usage statistics / update checks from inside the Job.
+# No web tools either: building a small app does not need them, a flaky search backend (HTTP 500 retried
+# for minutes) stalled a real run, and fetched pages are a prompt-injection path (dev-log).
 mkdir -p "$HOME/.gemini"
 cat > "$HOME/.gemini/settings.json" <<'JSON'
 {
   "general": { "disableAutoUpdate": true, "disableUpdateNag": true },
   "privacy": { "usageStatisticsEnabled": false },
-  "telemetry": { "enabled": false }
+  "telemetry": { "enabled": false },
+  "tools": { "exclude": ["google_web_search", "web_fetch"] }
 }
 JSON
 

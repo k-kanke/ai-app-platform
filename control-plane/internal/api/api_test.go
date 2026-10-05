@@ -3,7 +3,9 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,6 +56,9 @@ func newEnv(t *testing.T, st *store.Store, cs *fake.Clientset) *env {
 	kc := kube.New(cs, cfg)
 	// Pretend the Agent printed its latency trace as its last log line.
 	kc.LogReader = func(ctx context.Context, pod string, tail int64) (string, error) {
+		if strings.Contains(pod, "-release-") { // a release Job prints the content hash of what it froze
+			return "AAP_HASH " + fmt.Sprintf("%x", sha256.Sum256([]byte(pod))) + "\n", nil
+		}
 		return "== agent=gemini\nsome agent output\nAAP_TRACE {\"v\":1,\"rc\":0,\"writes\":3,\"t_entry\":1000,\"t_first_write\":21000,\"t_last_write\":30000}\n", nil
 	}
 	orch := orchestrator.New(st, kc, broker, orchestrator.Options{
@@ -98,7 +104,11 @@ func (e *env) kubelet(ctx context.Context) {
 			if e.noRuntime.Load() {
 				continue
 			}
-			d.Status = appsStatus(d.Generation)
+			if d.Spec.Replicas != nil && *d.Spec.Replicas == 0 {
+				d.Status = appsv1.DeploymentStatus{ObservedGeneration: d.Generation} // stopped
+			} else {
+				d.Status = appsStatus(d.Generation)
+			}
 			e.cs.AppsV1().Deployments(ns).UpdateStatus(ctx, &d, metav1.UpdateOptions{})
 		}
 	}

@@ -29,6 +29,9 @@ type Server struct {
 	// BaseCtx is the lifetime of background operations (cancelled on shutdown).
 	BaseCtx        context.Context
 	AppURLTemplate string
+	// DefaultStrategy is used when a create request does not say ("" = inplace). New apps can opt in
+	// to the release strategy with {"strategy":"release"}; existing apps keep their strategy.
+	DefaultStrategy string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -40,6 +43,10 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("DELETE /api/v1/apps/{id}", s.deleteApp)
 	m.HandleFunc("POST /api/v1/apps/{id}/changes", s.changeApp)
 	m.HandleFunc("POST /api/v1/apps/{id}/retry", s.retryApp)
+	m.HandleFunc("POST /api/v1/apps/{id}/approve", s.approveApp)
+	m.HandleFunc("POST /api/v1/apps/{id}/discard", s.discardApp)
+	m.HandleFunc("POST /api/v1/apps/{id}/rollback", s.rollbackApp)
+	m.HandleFunc("GET /api/v1/apps/{id}/releases", s.listReleases)
 	m.HandleFunc("GET /api/v1/apps/{id}/operations", s.listOps)
 	m.HandleFunc("GET /api/v1/apps/{id}/events", s.sse)
 	m.HandleFunc("POST /internal/v1/operations/{op}/events", s.agentEvent)
@@ -80,15 +87,19 @@ func slug(name string) string {
 
 type appView struct {
 	store.App
-	URL       string           `json:"url,omitempty"`
-	Actual    *kube.Actual     `json:"actual,omitempty"`
-	Operation *store.Operation `json:"operation,omitempty"` // active or most recent
+	URL        string           `json:"url,omitempty"`
+	PreviewURL string           `json:"previewUrl,omitempty"` // release strategy: the not-yet-approved version
+	Actual     *kube.Actual     `json:"actual,omitempty"`
+	Operation  *store.Operation `json:"operation,omitempty"` // active or most recent
 }
 
 func (s *Server) view(ctx context.Context, a store.App, withActual bool) appView {
 	v := appView{App: a}
 	if a.Phase == store.PhaseReady && s.AppURLTemplate != "" {
 		v.URL = strings.ReplaceAll(s.AppURLTemplate, "{id}", a.ID)
+	}
+	if a.Strategy == store.StrategyRelease && a.DraftState == store.DraftPreviewReady && s.AppURLTemplate != "" {
+		v.PreviewURL = strings.ReplaceAll(s.AppURLTemplate, "{id}", a.ID+"-preview")
 	}
 	if withActual {
 		if act, err := s.Kube.Actual(ctx, a.ID); err == nil {
@@ -112,9 +123,20 @@ func decode(r *http.Request, dst any) error {
 }
 
 func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
-	var in struct{ ID, Name, Prompt string }
+	var in struct{ ID, Name, Prompt, Strategy string }
 	if err := decode(r, &in); err != nil {
 		writeErr(w, 400, "invalid JSON")
+		return
+	}
+	strategy := in.Strategy
+	if strategy == "" {
+		strategy = s.DefaultStrategy
+	}
+	if strategy == "" {
+		strategy = store.StrategyInplace
+	}
+	if strategy != store.StrategyInplace && strategy != store.StrategyRelease {
+		writeErr(w, 400, "unknown strategy %q (inplace | release)", strategy)
 		return
 	}
 	in.Prompt, in.Name = strings.TrimSpace(in.Prompt), strings.TrimSpace(in.Name)
@@ -149,14 +171,14 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	app, err := s.St.CreateApp(ctx, id, in.Name)
+	app, err := s.St.CreateAppWithStrategy(ctx, id, in.Name, strategy)
 	if errors.Is(err, store.ErrConflict) {
 		existing, _ := s.St.GetApp(ctx, id)
 		if existing.Phase != store.PhaseDeleted {
 			writeErr(w, 409, "app %q already exists", id)
 			return
 		}
-		if err := s.St.RecreateApp(ctx, id, in.Name); err != nil {
+		if err := s.St.RecreateApp(ctx, id, in.Name, strategy); err != nil {
 			writeErr(w, 500, "%v", err)
 			return
 		}
@@ -221,7 +243,7 @@ func (s *Server) changeApp(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 409, "別の作業が進行中です。終わるまでお待ちください")
 		return
 	}
-	if a.Phase != store.PhaseReady {
+	if a.Phase != store.PhaseReady && !(a.Strategy == store.StrategyRelease && a.Phase == store.PhasePreview) {
 		writeErr(w, 409, "app is %s; it can only be changed when READY", a.Phase)
 		return
 	}
@@ -403,4 +425,103 @@ func firstNonEmpty(a ...string) string {
 		}
 	}
 	return ""
+}
+
+// releaseApp loads an app for a release-strategy action and refuses anything else.
+func (s *Server) releaseApp(w http.ResponseWriter, r *http.Request) (store.App, bool) {
+	a, err := s.St.GetApp(r.Context(), r.PathValue("id"))
+	if err != nil || a.Phase == store.PhaseDeleted {
+		writeErr(w, 404, "app not found")
+		return a, false
+	}
+	if a.Strategy != store.StrategyRelease {
+		writeErr(w, 409, "this app uses the %q strategy; releases do not apply", a.Strategy)
+		return a, false
+	}
+	if _, err := s.St.ActiveOperation(r.Context(), a.ID); err == nil {
+		writeErr(w, 409, "別の作業が進行中です。終わるまでお待ちください")
+		return a, false
+	}
+	return a, true
+}
+
+// startOp records and starts a release-strategy operation.
+func (s *Server) startOp(w http.ResponseWriter, r *http.Request, a store.App, kind, param, queuedMsg string) {
+	op, created, err := s.St.CreateOperation(r.Context(), store.Operation{ID: newID(), AppID: a.ID, Kind: kind, Prompt: param, IdempotencyKey: r.Header.Get("Idempotency-Key")})
+	if err != nil {
+		writeErr(w, 500, "%v", err)
+		return
+	}
+	if created {
+		s.Orch.Emit(s.BaseCtx, a.ID, op.ID, store.PhaseQueued, queuedMsg)
+		s.Orch.Submit(s.BaseCtx, op)
+	}
+	writeJSON(w, 202, map[string]any{"operation": op})
+}
+
+// approveApp turns the previewed draft into the next immutable release and makes it live.
+func (s *Server) approveApp(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.releaseApp(w, r)
+	if !ok {
+		return
+	}
+	if a.DraftState != store.DraftPreviewReady {
+		writeErr(w, 409, "承認できるお試し版がありません(状態: %q)", a.DraftState)
+		return
+	}
+	latest, err := s.St.LatestReleaseNumber(r.Context(), a.ID)
+	if err != nil {
+		writeErr(w, 500, "%v", err)
+		return
+	}
+	s.startOp(w, r, a, store.KindApprove, strconv.Itoa(latest+1), "承認を受け付けました")
+}
+
+// discardApp throws the draft and its preview away (back to the live release).
+func (s *Server) discardApp(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.releaseApp(w, r)
+	if !ok {
+		return
+	}
+	if a.LiveRelease == 0 {
+		writeErr(w, 409, "本番に反映された版がまだないので、破棄ではなく削除してください")
+		return
+	}
+	s.startOp(w, r, a, store.KindDiscard, "", "お試し版の破棄を受け付けました")
+}
+
+// rollbackApp puts production back on the previous release; {"withData":true} also restores the
+// data snapshot taken just before the current release went live.
+func (s *Server) rollbackApp(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.releaseApp(w, r)
+	if !ok {
+		return
+	}
+	if a.LiveRelease < 2 {
+		writeErr(w, 409, "戻せる前の版がありません(現在の版: %d)", a.LiveRelease)
+		return
+	}
+	var in struct {
+		WithData bool `json:"withData"`
+	}
+	_ = decode(r, &in)
+	param := "withData=0"
+	if in.WithData {
+		param = "withData=1"
+	}
+	s.startOp(w, r, a, store.KindRollback, param, "前の版に戻す依頼を受け付けました")
+}
+
+func (s *Server) listReleases(w http.ResponseWriter, r *http.Request) {
+	a, err := s.St.GetApp(r.Context(), r.PathValue("id"))
+	if err != nil || a.Phase == store.PhaseDeleted {
+		writeErr(w, 404, "app not found")
+		return
+	}
+	rel, err := s.St.ListReleases(r.Context(), a.ID)
+	if err != nil {
+		writeErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"liveRelease": a.LiveRelease, "releases": rel})
 }

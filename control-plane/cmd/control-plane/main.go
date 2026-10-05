@@ -71,7 +71,7 @@ func run(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second,
-		Handler: (&api.Server{St: st, Kube: k, Orch: orch, Broker: broker, BaseCtx: ctx, AppURLTemplate: cfg.AppURLTemplate}).Handler(),
+		Handler: (&api.Server{St: st, Kube: k, Orch: orch, Broker: broker, BaseCtx: ctx, AppURLTemplate: cfg.AppURLTemplate, DefaultStrategy: cfg.DefaultStrategy}).Handler(),
 	}
 	go func() {
 		<-ctx.Done()

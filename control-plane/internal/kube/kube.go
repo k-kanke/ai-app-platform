@@ -55,10 +55,16 @@ func New(cs kubernetes.Interface, cfg config.Config) *Client { return &Client{cs
 
 // EnsureWorkspace creates the Source and Data PVCs. Existing PVCs are kept.
 func (c *Client) EnsureWorkspace(ctx context.Context, appID string) error {
-	for _, p := range []struct{ name, size, role string }{
+	return c.ensurePVCs(ctx, appID, []pvcSpec{
 		{SourcePVC(appID), c.cfg.SourceSize, "source"},
 		{DataPVC(appID), c.cfg.DataSize, "data"},
-	} {
+	})
+}
+
+type pvcSpec struct{ name, size, role string }
+
+func (c *Client) ensurePVCs(ctx context.Context, appID string, list []pvcSpec) error {
+	for _, p := range list {
 		pvc := &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{Name: p.name, Namespace: c.cfg.Namespace, Labels: labels(appID, p.role, "")},
 			Spec: corev1.PersistentVolumeClaimSpec{
@@ -202,12 +208,17 @@ chown %[2]d:%[2]d /src/%[1]s`, SubPathCurrent, AppUID)
 // AgentSpec describes one Agent run.
 type AgentSpec struct {
 	AppID, OpID, Kind, Prompt, Token string
+	SubPath                          string // "" = SubPathCurrent (in-place strategy); SubPathDraft for releases
 }
 
 // EnsureAgentJob starts the ephemeral Agent. It mounts ONLY the Source workspace
 // ("current" sub path); it never sees the Data PVC, snapshots, or cluster credentials.
 func (c *Client) EnsureAgentJob(ctx context.Context, a AgentSpec) error {
 	j := c.baseJob(a.AppID, RoleAgent, a.OpID)
+	sub := a.SubPath
+	if sub == "" {
+		sub = SubPathCurrent
+	}
 	j.Spec.ActiveDeadlineSeconds = int64p(int64(c.cfg.AgentTimeout.Seconds()))
 	spec := &j.Spec.Template.Spec
 	spec.Volumes = []corev1.Volume{pvcVolume("workspace", SourcePVC(a.AppID))}
@@ -223,7 +234,7 @@ func (c *Client) EnsureAgentJob(ctx context.Context, a AgentSpec) error {
 			{Name: "AAP_CONTROL_PLANE_URL", Value: c.cfg.InternalURL},
 			{Name: "AAP_PROGRESS_TOKEN", Value: a.Token},
 		},
-		VolumeMounts:    []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: SubPathCurrent}},
+		VolumeMounts:    []corev1.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: sub}},
 		Resources:       limits("1", "1Gi"),
 		SecurityContext: restrictedSC(AppUID),
 	}
@@ -240,7 +251,12 @@ func (c *Client) EnsureAgentJob(ctx context.Context, a AgentSpec) error {
 
 // AgentLogTail returns the last lines of the Agent Job's pod log (for diagnosing failures).
 func (c *Client) AgentLogTail(ctx context.Context, appID, opID string, lines int64) (string, error) {
-	sel := fmt.Sprintf("%s=%s,%s=%s,%s=%s", LabelAppID, appID, LabelOpID, opID, LabelRole, RoleAgent)
+	return c.JobLogTail(ctx, appID, RoleAgent, opID, lines)
+}
+
+// JobLogTail returns the last lines of the pod log of the Job with the given role and operation.
+func (c *Client) JobLogTail(ctx context.Context, appID, role, opID string, lines int64) (string, error) {
+	sel := fmt.Sprintf("%s=%s,%s=%s,%s=%s", LabelAppID, appID, LabelOpID, opID, LabelRole, role)
 	pods, err := c.cs.CoreV1().Pods(c.cfg.Namespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
 	if err != nil || len(pods.Items) == 0 {
 		return "", err
@@ -277,25 +293,49 @@ func (c *Client) JobStatus(ctx context.Context, name string) (JobPhase, string, 
 
 // ---- Runtime ---------------------------------------------------------------
 
-// EnsureRuntime creates/updates the long-running App Runtime (Deployment+Service[+Ingress]).
+// EnsureRuntime creates/updates the long-running App Runtime (in-place strategy: reads current/).
 // restartToken changes the pod template so a new rollout picks up modified source.
 func (c *Client) EnsureRuntime(ctx context.Context, appID, restartToken string) error {
-	ns := c.cfg.Namespace
-	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: Deployment(appID), Namespace: ns, Labels: labels(appID, "runtime", "")},
+	return c.EnsureRuntimeAt(ctx, appID, restartToken, SubPathCurrent)
+}
+
+// EnsureRuntimeAt runs the production runtime from srcSubPath of the Source PVC (read-only).
+// The release strategy passes ReleaseDir(n), so production only ever reads an immutable release.
+func (c *Client) EnsureRuntimeAt(ctx context.Context, appID, restartToken, srcSubPath string) error {
+	d := c.appDeployment(deployParams{
+		Name: Deployment(appID), AppID: appID, Role: "runtime", SrcSubPath: srcSubPath,
+		DataClaim: DataPVC(appID), Token: restartToken,
+	})
+	if err := c.applyDeployment(ctx, d); err != nil {
+		return err
+	}
+	if err := c.ensureService(ctx, Service(appID), appID, "runtime"); err != nil {
+		return err
+	}
+	_, err := c.EnsureIngress(ctx, appID)
+	return err
+}
+
+type deployParams struct {
+	Name, AppID, Role, SrcSubPath, DataClaim, Token string
+}
+
+func (c *Client) appDeployment(p deployParams) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: c.cfg.Namespace, Labels: labels(p.AppID, p.Role, "")},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: int32p(1),
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}, // RWO + single writer to /data
-			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{LabelAppID: appID, LabelRole: "runtime"}},
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{LabelAppID: p.AppID, LabelRole: p.Role}},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels(appID, "runtime", ""),
-					Annotations: map[string]string{"aap.dev/restart-token": restartToken},
+					Labels:      labels(p.AppID, p.Role, ""),
+					Annotations: map[string]string{"aap.dev/restart-token": p.Token, "aap.dev/source": p.SrcSubPath},
 				},
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: boolp(false),
 					SecurityContext:              podSC(),
-					Volumes: []corev1.Volume{pvcVolume("src", SourcePVC(appID)), pvcVolume("data", DataPVC(appID)),
+					Volumes: []corev1.Volume{pvcVolume("src", SourcePVC(p.AppID)), pvcVolume("data", p.DataClaim),
 						{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
 					Containers: []corev1.Container{{
 						Name: "app", Image: c.cfg.RuntimeImage, ImagePullPolicy: c.pullPolicy(),
@@ -305,7 +345,7 @@ func (c *Client) EnsureRuntime(ctx context.Context, appID, restartToken string) 
 							{Name: "DATA_DIR", Value: "/data"},
 						},
 						VolumeMounts: []corev1.VolumeMount{
-							{Name: "src", MountPath: "/app", SubPath: SubPathCurrent, ReadOnly: true},
+							{Name: "src", MountPath: "/app", SubPath: p.SrcSubPath, ReadOnly: true},
 							{Name: "data", MountPath: "/data"},
 							{Name: "tmp", MountPath: "/tmp"},
 						},
@@ -324,7 +364,10 @@ func (c *Client) EnsureRuntime(ctx context.Context, appID, restartToken string) 
 			},
 		},
 	}
-	deps := c.cs.AppsV1().Deployments(ns)
+}
+
+func (c *Client) applyDeployment(ctx context.Context, dep *appsv1.Deployment) error {
+	deps := c.cs.AppsV1().Deployments(c.cfg.Namespace)
 	if _, err := deps.Create(ctx, dep, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("create deployment: %w", err)
@@ -334,24 +377,26 @@ func (c *Client) EnsureRuntime(ctx context.Context, appID, restartToken string) 
 			return gerr
 		}
 		cur.Spec.Template = dep.Spec.Template
+		cur.Spec.Replicas = dep.Spec.Replicas // a runtime stopped for a snapshot is started again here
 		if _, uerr := deps.Update(ctx, cur, metav1.UpdateOptions{}); uerr != nil {
 			return fmt.Errorf("update deployment: %w", uerr)
 		}
 	}
+	return nil
+}
 
+func (c *Client) ensureService(ctx context.Context, name, appID, role string) error {
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: Service(appID), Namespace: ns, Labels: labels(appID, "runtime", "")},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: c.cfg.Namespace, Labels: labels(appID, role, "")},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{LabelAppID: appID, LabelRole: "runtime"},
+			Selector: map[string]string{LabelAppID: appID, LabelRole: role},
 			Ports:    []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstr.FromString("http")}},
 		},
 	}
-	if _, err := c.cs.CoreV1().Services(ns).Create(ctx, svc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+	if _, err := c.cs.CoreV1().Services(c.cfg.Namespace).Create(ctx, svc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("create service: %w", err)
 	}
-
-	_, err := c.EnsureIngress(ctx, appID)
-	return err
+	return nil
 }
 
 // IngressEnabled reports whether apps get a public Ingress (class + host pattern set).
@@ -362,6 +407,10 @@ func (c *Client) IngressEnabled() bool {
 // EnsureIngress creates the app's Ingress if it does not exist yet. It never
 // modifies an existing one. created reports whether a new Ingress was made.
 func (c *Client) EnsureIngress(ctx context.Context, appID string) (created bool, err error) {
+	return c.ensureIngress(ctx, base(appID), appID, "runtime", strings.ReplaceAll(c.cfg.IngressHostPattern, "{id}", appID), Service(appID))
+}
+
+func (c *Client) ensureIngress(ctx context.Context, name, appID, role, host, svc string) (bool, error) {
 	if !c.IngressEnabled() {
 		return false, nil
 	}
@@ -369,19 +418,19 @@ func (c *Client) EnsureIngress(ctx context.Context, appID string) (created bool,
 	class := c.cfg.IngressClass
 	pt := networkingv1.PathTypePrefix
 	ing := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{Name: base(appID), Namespace: ns, Labels: labels(appID, "runtime", "")},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels(appID, role, "")},
 		Spec: networkingv1.IngressSpec{
 			IngressClassName: &class,
 			Rules: []networkingv1.IngressRule{{
-				Host: strings.ReplaceAll(c.cfg.IngressHostPattern, "{id}", appID),
+				Host: host,
 				IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{
 					Paths: []networkingv1.HTTPIngressPath{{Path: "/", PathType: &pt, Backend: networkingv1.IngressBackend{
-						Service: &networkingv1.IngressServiceBackend{Name: Service(appID), Port: networkingv1.ServiceBackendPort{Name: "http"}}}}},
+						Service: &networkingv1.IngressServiceBackend{Name: svc, Port: networkingv1.ServiceBackendPort{Name: "http"}}}}},
 				}},
 			}},
 		},
 	}
-	_, err = c.cs.NetworkingV1().Ingresses(ns).Create(ctx, ing, metav1.CreateOptions{})
+	_, err := c.cs.NetworkingV1().Ingresses(ns).Create(ctx, ing, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
 		return false, nil
 	}
@@ -398,7 +447,11 @@ func withReadOnlyRoot(sc *corev1.SecurityContext) *corev1.SecurityContext {
 
 // RuntimeReady reports whether the current rollout of the App Runtime is fully available.
 func (c *Client) RuntimeReady(ctx context.Context, appID string) (bool, string, error) {
-	d, err := c.cs.AppsV1().Deployments(c.cfg.Namespace).Get(ctx, Deployment(appID), metav1.GetOptions{})
+	return c.deploymentReady(ctx, Deployment(appID))
+}
+
+func (c *Client) deploymentReady(ctx context.Context, name string) (bool, string, error) {
+	d, err := c.cs.AppsV1().Deployments(c.cfg.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return false, "runtime missing", nil
 	}
@@ -472,11 +525,14 @@ func (c *Client) DeleteApp(ctx context.Context, appID string, purge bool) error 
 	if err := ignore(c.cs.AppsV1().Deployments(ns).Delete(ctx, Deployment(appID), do)); err != nil {
 		return err
 	}
+	if err := c.DeletePreview(ctx, appID); err != nil {
+		return err
+	}
 	if err := ignore(c.cs.BatchV1().Jobs(ns).DeleteCollection(ctx, do, metav1.ListOptions{LabelSelector: sel})); err != nil {
 		return err
 	}
 	if purge {
-		for _, n := range []string{SourcePVC(appID), DataPVC(appID)} {
+		for _, n := range []string{SourcePVC(appID), DataPVC(appID), PreviewDataPVC(appID), SnapshotPVC(appID)} {
 			if err := ignore(c.cs.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, n, do)); err != nil {
 				return err
 			}

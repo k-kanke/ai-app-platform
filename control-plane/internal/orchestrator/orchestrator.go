@@ -130,7 +130,13 @@ func (o *Orchestrator) run(ctx context.Context, op store.Operation) {
 	var err error
 	switch op.Kind {
 	case store.KindCreate, store.KindModify:
-		err = o.runBuild(ctx, op)
+		if app, gerr := o.st.GetApp(ctx, op.AppID); gerr == nil && app.Strategy == store.StrategyRelease {
+			err = o.runDraft(ctx, op, app)
+		} else {
+			err = o.runBuild(ctx, op)
+		}
+	case store.KindApprove, store.KindRollback, store.KindDiscard:
+		err = o.runReleaseOp(ctx, op)
 	case store.KindDelete:
 		err = o.runDelete(ctx, op)
 	default:

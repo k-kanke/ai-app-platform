@@ -42,7 +42,8 @@ def load_report():
 
 
 def ssh(host, cmd, stdin=None, timeout=300):
-    r = subprocess.run(["ssh", "-o", "BatchMode=yes", host, cmd], input=stdin, capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", host, cmd],
+                       input=stdin, capture_output=True, text=True, timeout=timeout)
     return r.returncode, r.stdout, r.stderr
 
 
@@ -55,9 +56,19 @@ def cp(host, method, path, body=None):
     """Call the Control Plane API through the portal pod (same route the Portal uses)."""
     remote = "kubectl -n platform-system exec -i deploy/portal -- node -e %s %s %s" % (
         shlex.quote(NODE), shlex.quote(method), shlex.quote(path))
-    rc, out, err = ssh(host, remote, stdin=json.dumps(body) if body is not None else "")
-    if rc != 0:
-        raise RuntimeError("cp call failed: " + (err or out)[-300:])
+    # A single ssh/kubectl hiccup must not abort a long (and paid) benchmark: retry a few times.
+    last = ""
+    for attempt in range(4):
+        try:
+            rc, out, err = ssh(host, remote, stdin=json.dumps(body) if body is not None else "", timeout=60)
+            if rc == 0:
+                break
+            last = (err or out)[-300:]
+        except subprocess.TimeoutExpired:
+            last = "ssh timed out"
+        time.sleep(2 + attempt * 3)
+    else:
+        raise RuntimeError("cp call failed after retries: " + last)
     code, _, text = out.strip().partition(" ")
     try:
         return int(code), json.loads(text) if text else {}

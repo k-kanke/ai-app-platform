@@ -1,0 +1,82 @@
+{
+ "app": "relbench",
+ "startedAt": "2026-10-05T09:19:29.449493+00:00",
+ "steps": [
+  {
+   "step": "create -> preview",
+   "op": "5a01f86b6a6896d5",
+   "kind": "create",
+   "state": "SUCCEEDED",
+   "wall_s": 994.3,
+   "op_s": 235.0,
+   "to_agent_start_s": 19.7,
+   "ttfc_s": 74.6,
+   "last_write_s": 162.2,
+   "agent_end_s": 225.0,
+   "writes": 22,
+   "model": "gemini-3.8-flash",
+   "production_exists": false,
+   "preview_http": "200"
+  },
+  {
+   "step": "approve (release 1)",
+   "op": "f8c0291fe243d38f",
+   "kind": "approve",
+   "state": "SUCCEEDED",
+   "wall_s": 10.0,
+   "op_s": 6.4,
+   "production_source": "releases/1",
+   "prod_http": "200"
+  },
+  {
+   "step": "change -> preview",
+   "op": "61d2e4778e391e75",
+   "kind": "modify",
+   "state": "SUCCEEDED",
+   "wall_s": 74.9,
+   "op_s": 72.9,
+   "to_agent_start_s": 4.4,
+   "ttfc_s": 41.3,
+   "last_write_s": 41.3,
+   "agent_end_s": 65.8,
+   "writes": 1,
+   "model": "gemini-3.8-flash",
+   "production_source_during_preview": "releases/1",
+   "preview_http": "200"
+  },
+  {
+   "step": "approve (release 2)",
+   "op": "7824864e938b8e3c",
+   "kind": "approve",
+   "state": "SUCCEEDED",
+   "wall_s": 13.4,
+   "op_s": 9.0,
+   "production_source": "releases/2",
+   "prod_http": "200"
+  }
+ ],
+ "releases": {
+  "liveRelease": 2,
+  "releases": [
+   {
+    "appId": "relbench",
+    "n": 2,
+    "sourceHash": "dd3ce12034d6bb13c727f82070bdc4d685a7b0cf9e6aa7c0bf27bd9de6aff35d",
+    "prompt": "文字をもっと大きくして",
+    "dataSnapshot": true,
+    "replaced": 1,
+    "createdAt": "2026-10-05T09:21:04.228389928Z"
+   },
+   {
+    "appId": "relbench",
+    "n": 1,
+    "sourceHash": "7cae4871a7b46ca1450fa87c0ea6a98bacd7b642e30f45cd989ef1e68a99def1",
+    "prompt": "毎晩洗濯物を干すのだが、夜に降るのか、明日降るのか毎回調べるのが面倒なので教えてくれるようにしてほしい。\nちなみに八王子市に住んでるので八王子市だけで良いです",
+    "dataSnapshot": false,
+    "replaced": 0,
+    "createdAt": "2026-10-05T09:19:36.100796957Z"
+   }
+  ]
+ },
+ "finishedAt": "2026-10-05T09:21:11.333613+00:00"
+}

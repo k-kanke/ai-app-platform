@@ -1,0 +1,16 @@
+{
+ "rollback_with_data": {
+  "op_to_done_s": 11.3,
+  "longest_unavailable_s": 5.41,
+  "failed_samples": 33,
+  "samples": 85,
+  "live": 1
+ },
+ "rollback_without_data(roll forward)": {
+  "op_to_done_s": 7.6,
+  "longest_unavailable_s": 2.4,
+  "failed_samples": 18,
+  "samples": 67,
+  "live": 2
+ }
+}

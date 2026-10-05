@@ -27,6 +27,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ssh", required=True); ap.add_argument("--id", default="relbench")
     ap.add_argument("--teardown", action="store_true")
+    ap.add_argument("--resume", action="store_true", help="continue with an app that already exists (e.g. after the script was interrupted)")
     ap.add_argument("--out", default=os.path.join(here, "..", "docs", "measurements", "data", "release-live-%s.json" % dt.date.today().isoformat()))
     a = ap.parse_args()
     host, app = a.ssh, a.id
@@ -76,10 +77,16 @@ def main():
 
     print("== 1. create (release strategy, real agent)")
     t0 = time.time()
-    c, d = bench.cp(host, "POST", "/api/v1/apps", {"id": app, "name": "計測用(release)", "prompt": PROMPT, "strategy": "release"})
-    if c != 202:
-        sys.exit("create failed: %s %s" % (c, d))
-    d = wait(lambda d: d.get("phase") == "PREVIEW" and d.get("draftState") == "PREVIEW_READY", what="first preview")
+    if a.resume and get():
+        print("  (resuming: the app already exists)")
+        d = wait(lambda d: d.get("phase") == "PREVIEW" and d.get("draftState") == "PREVIEW_READY", what="first preview")
+        ops = bench.cp(host, "GET", "/api/v1/apps/%s/operations" % app)[1]["operations"]
+        t0 = time.time() - (P(ops[-1]["updatedAt"]) - P(ops[-1]["createdAt"]))  # wall time = the operation's own duration
+    else:
+        c, d = bench.cp(host, "POST", "/api/v1/apps", {"id": app, "name": "計測用(release)", "prompt": PROMPT, "strategy": "release"})
+        if c != 202:
+            sys.exit("create failed: %s %s" % (c, d))
+        d = wait(lambda d: d.get("phase") == "PREVIEW" and d.get("draftState") == "PREVIEW_READY", what="first preview")
     step("create -> preview", t0, d, {"production_exists": bool(source_of("aap-gen-" + app)), "preview_http": curl_host(app + "-preview.kanke-aap-gen.com")})
 
     print("== 2. approve -> release 1")

@@ -91,6 +91,27 @@ manifest のバケット名を、案内に書いた名前(`kanke-aap-backup`)に
 - 変更が「見た目として」依頼どおりかは、コードの grep では判断できない。Stage 2 の Preview と承認(人が見て OK を出す)が必要になる理由が実例になった。
 - 失敗時の詳細は Pod のログにしか残らない(Portal に出ない)。
 
+## 2026-10-05 - 「直したのに直っていない」: 生成アプリの長いキャッシュ
+
+### Context
+天気アプリで「読み込み中のくるくるが消えない」を変更依頼したところ、Agent は CSS(`.state-container.hidden` の欠落)と JS を実際に直した。しかし家族のスマホでは直らなかった。
+
+### Problem
+利用者は「外部 API の取得自体が失敗している」と疑った。
+
+### Actual State
+- 外部 API(Open-Meteo)は成功していた(実行中の Pod から 200、ログに失敗なし)。
+- 生成コードが静的ファイルに `Cache-Control: public, max-age=3600` を付けていた。変更後のスマホのアクセスは `/api/weather` だけで、`app.js` / `style.css` を再取得していない。古い画面が最大1時間残る。Cloudflare のエッジキャッシュも同じ。
+
+### Why
+Agent は「サーバーのコードが動くこと」しか見ていない。変更が利用者に届くまでの経路(ブラウザ・CDN のキャッシュ)は、生成物のテストにも Platform にも責任範囲として入っていなかった。
+
+### Temporary Fix
+プライベートタブで確認 / Cloudflare のキャッシュを消す。Cloudflare の Cache Rule で、アプリのホスト(Portal 以外)を Bypass cache にする。Agent への指示(AGENTS.md)に「長いキャッシュを付けない」「一時表示が必ず消えることを確認する」を追加。
+
+### Design Question
+「変更が届いた」ことを Platform が保証すべきか。例: アプリのホストで配信する際に Platform 側で `Cache-Control` を上書きする(ingress の snippet は無効のため、プロキシ層が要る)。もう1つ、画面の不具合(見た目)を機械的に検出する手段(ヘッドレスブラウザでの確認)を Stage 2 の Preview に入れるか。
+
 ## 未検証・既知の穴(Stage 1)
 - 実 LLM Agent(claude.sh)の動作、Agent の egress 制限(NetworkPolicy)の実効性(kind の CNI で未検証)
 - 稼働中の App が使っている `current/` を Agent が直接書き換える(Stage 2 の Isolated Workspace で解消予定)。変更中は短時間、生成途中のコードが見えうる

@@ -70,6 +70,7 @@ type App struct {
 	Phase       string    `json:"phase"`
 	Strategy    string    `json:"strategy"`
 	LiveRelease int       `json:"liveRelease"`          // 0 = nothing is live yet
+	PrevRelease int       `json:"prevRelease"`          // the release that was live just before (rollback target); 0 = none
 	DraftState  string    `json:"draftState,omitempty"` // release strategy only
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
@@ -83,6 +84,7 @@ type Release struct {
 	Prompt       string    `json:"prompt"`
 	ApprovedBy   string    `json:"approvedBy,omitempty"`
 	DataSnapshot bool      `json:"dataSnapshot"` // a snapshot of production data taken just before this release went live
+	Replaced     int       `json:"replaced"`     // the release that was live when this one was approved (that snapshot belongs to it)
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
@@ -117,11 +119,12 @@ type Store struct{ db *sql.DB }
 const schema = `
 CREATE TABLE IF NOT EXISTS apps (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, phase TEXT NOT NULL,
-  strategy TEXT NOT NULL DEFAULT 'inplace', live_release INTEGER NOT NULL DEFAULT 0, draft_state TEXT NOT NULL DEFAULT '',
+  strategy TEXT NOT NULL DEFAULT 'inplace', live_release INTEGER NOT NULL DEFAULT 0, prev_release INTEGER NOT NULL DEFAULT 0,
+  draft_state TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS releases (
   app_id TEXT NOT NULL, n INTEGER NOT NULL, source_hash TEXT NOT NULL, prompt TEXT NOT NULL DEFAULT '',
-  approved_by TEXT NOT NULL DEFAULT '', data_snapshot INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  approved_by TEXT NOT NULL DEFAULT '', data_snapshot INTEGER NOT NULL DEFAULT 0, replaced INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
   PRIMARY KEY (app_id, n));
 CREATE TABLE IF NOT EXISTS operations (
   id TEXT PRIMARY KEY, app_id TEXT NOT NULL, kind TEXT NOT NULL, prompt TEXT NOT NULL,
@@ -159,6 +162,8 @@ func Open(path string) (*Store, error) {
 		`ALTER TABLE apps ADD COLUMN strategy TEXT NOT NULL DEFAULT 'inplace'`,
 		`ALTER TABLE apps ADD COLUMN live_release INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE apps ADD COLUMN draft_state TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE apps ADD COLUMN prev_release INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE releases ADD COLUMN replaced INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return nil, err
@@ -192,12 +197,12 @@ func (s *Store) CreateAppWithStrategy(ctx context.Context, id, name, strategy st
 	return App{ID: id, Name: name, Phase: PhaseQueued, Strategy: strategy, CreatedAt: now, UpdatedAt: now}, nil
 }
 
-const appSelect = `SELECT id,name,phase,strategy,live_release,draft_state,created_at,updated_at FROM apps`
+const appSelect = `SELECT id,name,phase,strategy,live_release,prev_release,draft_state,created_at,updated_at FROM apps`
 
 func scanApp(r scanner) (App, error) {
 	var a App
 	var c, u string
-	if err := r.Scan(&a.ID, &a.Name, &a.Phase, &a.Strategy, &a.LiveRelease, &a.DraftState, &c, &u); err != nil {
+	if err := r.Scan(&a.ID, &a.Name, &a.Phase, &a.Strategy, &a.LiveRelease, &a.PrevRelease, &a.DraftState, &c, &u); err != nil {
 		return App{}, err
 	}
 	a.CreatedAt, a.UpdatedAt = pt(c), pt(u)
@@ -236,19 +241,19 @@ func (s *Store) SetDraftState(ctx context.Context, id, state string) error {
 	return err
 }
 
-// SetLiveRelease points production at release n (0 = none).
-func (s *Store) SetLiveRelease(ctx context.Context, id string, n int) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE apps SET live_release=?, updated_at=? WHERE id=?`, n, ts(time.Now()), id)
+// SetLiveRelease points production at release n (0 = none) and remembers prev as the rollback target.
+func (s *Store) SetLiveRelease(ctx context.Context, id string, n, prev int) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE apps SET live_release=?, prev_release=?, updated_at=? WHERE id=?`, n, prev, ts(time.Now()), id)
 	return err
 }
 
 // AddRelease records an approved release. Re-adding the same (app, n) updates it, so a resumed approval is idempotent.
 func (s *Store) AddRelease(ctx context.Context, r Release) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO releases(app_id,n,source_hash,prompt,approved_by,data_snapshot,created_at) VALUES(?,?,?,?,?,?,?)
+		`INSERT INTO releases(app_id,n,source_hash,prompt,approved_by,data_snapshot,replaced,created_at) VALUES(?,?,?,?,?,?,?,?)
 		 ON CONFLICT(app_id,n) DO UPDATE SET source_hash=excluded.source_hash, prompt=excluded.prompt,
-		   approved_by=excluded.approved_by, data_snapshot=excluded.data_snapshot`,
-		r.AppID, r.N, r.SourceHash, r.Prompt, r.ApprovedBy, b2i(r.DataSnapshot), ts(time.Now()))
+		   approved_by=excluded.approved_by, data_snapshot=excluded.data_snapshot, replaced=excluded.replaced`,
+		r.AppID, r.N, r.SourceHash, r.Prompt, r.ApprovedBy, b2i(r.DataSnapshot), r.Replaced, ts(time.Now()))
 	return err
 }
 
@@ -256,14 +261,14 @@ func scanRelease(r scanner) (Release, error) {
 	var x Release
 	var snap int
 	var c string
-	if err := r.Scan(&x.AppID, &x.N, &x.SourceHash, &x.Prompt, &x.ApprovedBy, &snap, &c); err != nil {
+	if err := r.Scan(&x.AppID, &x.N, &x.SourceHash, &x.Prompt, &x.ApprovedBy, &snap, &x.Replaced, &c); err != nil {
 		return Release{}, err
 	}
 	x.DataSnapshot, x.CreatedAt = snap == 1, pt(c)
 	return x, nil
 }
 
-const releaseSelect = `SELECT app_id,n,source_hash,prompt,approved_by,data_snapshot,created_at FROM releases`
+const releaseSelect = `SELECT app_id,n,source_hash,prompt,approved_by,data_snapshot,replaced,created_at FROM releases`
 
 func (s *Store) GetRelease(ctx context.Context, appID string, n int) (Release, error) {
 	r, err := scanRelease(s.db.QueryRowContext(ctx, releaseSelect+` WHERE app_id=? AND n=?`, appID, n))
@@ -311,7 +316,7 @@ func (s *Store) SetAppPhase(ctx context.Context, id, phase string) error {
 
 // RecreateApp resets a deleted app so its id can be reused.
 func (s *Store) RecreateApp(ctx context.Context, id, name, strategy string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE apps SET name=?, phase=?, strategy=?, live_release=0, draft_state='', updated_at=? WHERE id=? AND phase=?`,
+	_, err := s.db.ExecContext(ctx, `UPDATE apps SET name=?, phase=?, strategy=?, live_release=0, prev_release=0, draft_state='', updated_at=? WHERE id=? AND phase=?`,
 		name, PhaseQueued, strategy, ts(time.Now()), id, PhaseDeleted)
 	if err == nil {
 		_, err = s.db.ExecContext(ctx, `DELETE FROM releases WHERE app_id=?`, id)

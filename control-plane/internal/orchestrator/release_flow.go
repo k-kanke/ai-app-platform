@@ -234,7 +234,7 @@ func (o *Orchestrator) runApprove(ctx context.Context, op store.Operation, app s
 		}
 	}
 	prompt := o.lastDraftPrompt(ctx, op.AppID)
-	if err := o.st.AddRelease(ctx, store.Release{AppID: op.AppID, N: n, SourceHash: m[1], Prompt: prompt, DataSnapshot: snapshot}); err != nil {
+	if err := o.st.AddRelease(ctx, store.Release{AppID: op.AppID, N: n, SourceHash: m[1], Prompt: prompt, DataSnapshot: snapshot, Replaced: app.LiveRelease}); err != nil {
 		return err
 	}
 	o.step(ctx, op, "runtime")
@@ -252,7 +252,7 @@ func (o *Orchestrator) runApprove(ctx context.Context, op store.Operation, app s
 		}
 		return o.userFail(ctx, op, app, "新しい版が起動しなかったので、元の版のままにしました。", fmt.Errorf("%s", why))
 	}
-	_ = o.st.SetLiveRelease(ctx, op.AppID, n)
+	_ = o.st.SetLiveRelease(ctx, op.AppID, n, app.LiveRelease)
 	_ = o.kube.DeletePreview(ctx, op.AppID)
 	_ = o.st.SetDraftState(ctx, op.AppID, store.DraftNone)
 	o.Emit(ctx, op.AppID, op.ID, store.PhaseReady, fmt.Sprintf("本番に反映しました(版 %d)", n))
@@ -274,18 +274,22 @@ func (o *Orchestrator) lastDraftPrompt(ctx context.Context, appID string) string
 }
 
 func (o *Orchestrator) runRollback(ctx context.Context, op store.Operation, app store.App) error {
-	withData := strings.Contains(op.Prompt, "withData=1")
-	live := app.LiveRelease
-	if live < 2 {
-		return o.userFail(ctx, op, app, "戻せる前の版がありません。", fmt.Errorf("live release is %d", live))
+	live, target := app.LiveRelease, app.PrevRelease
+	if target < 1 || live < 1 {
+		return o.userFail(ctx, op, app, "戻せる前の版がありません。", fmt.Errorf("live=%d prev=%d", live, target))
 	}
-	target := live - 1
 	cur, err := o.st.GetRelease(ctx, op.AppID, live)
 	if err != nil {
 		return err
 	}
+	// The data snapshot of release N is the data as it was when N replaced cur.Replaced. It only
+	// fits a rollback to exactly that release; for any other target it would restore the wrong data.
+	withData := strings.Contains(op.Prompt, "withData=1")
+	if withData && !(cur.DataSnapshot && cur.Replaced == target) {
+		return o.userFail(ctx, op, app, "この戻し方では、データは戻せません(戻す先の版に合うデータの保存がありません)。", fmt.Errorf("no matching data snapshot for release %d -> %d", live, target))
+	}
 	o.Emit(ctx, op.AppID, op.ID, store.PhaseStarting, "前の版に戻しています")
-	if withData && cur.DataSnapshot {
+	if withData {
 		o.step(ctx, op, "stop")
 		if err := o.stopRuntime(ctx, op.AppID); err != nil {
 			return o.userFail(ctx, op, app, "本番を止められませんでした。", err)
@@ -307,7 +311,7 @@ func (o *Orchestrator) runRollback(ctx context.Context, op store.Operation, app 
 	if !ready {
 		return o.userFail(ctx, op, app, "前の版が起動しませんでした。", fmt.Errorf("%s", why))
 	}
-	_ = o.st.SetLiveRelease(ctx, op.AppID, target)
+	_ = o.st.SetLiveRelease(ctx, op.AppID, target, live) // the release we left becomes the new "previous"
 	// The draft must not silently diverge from what is live: put it back too.
 	_ = o.kube.DeletePreview(ctx, op.AppID)
 	_ = o.st.SetDraftState(ctx, op.AppID, store.DraftNone)

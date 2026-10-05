@@ -134,6 +134,32 @@ func TestReleaseStrategyLifecycle(t *testing.T) {
 		t.Fatalf("rollback: live=%v sub=%q replicas=%d drestore=%d", app["liveRelease"], sub, replicas, e.jobCount("drestore"))
 	}
 
+	// 5b) After a rollback, a new approval makes the rolled-back-from release NOT the rollback target:
+	//     "previous" means "the release that was live just before", here release 1.
+	e.do("POST", "/api/v1/apps/memo/changes", map[string]string{"prompt": "もう一度"}, nil)
+	e.waitDraft("memo", "READY")
+	e.do("POST", "/api/v1/apps/memo/approve", nil, nil)
+	app = e.waitDraft("memo", "READY")
+	if app["liveRelease"] != float64(3) || app["prevRelease"] != float64(1) {
+		t.Fatalf("after rollback then approve: live=%v prev=%v (want 3 and 1)", app["liveRelease"], app["prevRelease"])
+	}
+	// release 3 replaced release 1, so the data snapshot fits a rollback to 1.
+	if app["canRestoreData"] != true {
+		t.Fatalf("data restore should be possible right after an approval: %v", app)
+	}
+	e.do("POST", "/api/v1/apps/memo/rollback", map[string]bool{"withData": false}, nil)
+	app = e.waitDraft("memo", "READY")
+	if app["liveRelease"] != float64(1) || app["prevRelease"] != float64(3) {
+		t.Fatalf("rollback must go to the release that was live before (1), got live=%v prev=%v", app["liveRelease"], app["prevRelease"])
+	}
+	// Rolling "forward" again must not offer to restore data: there is no snapshot of that moment.
+	if app["canRestoreData"] == true {
+		t.Fatal("data restore must not be offered for a rollback that no snapshot matches")
+	}
+	if c, _ := e.do("POST", "/api/v1/apps/memo/rollback", map[string]bool{"withData": true}, nil); c != 409 {
+		t.Fatalf("restoring data without a matching snapshot must be refused, got %d", c)
+	}
+
 	// 6) A draft can be thrown away.
 	e.do("POST", "/api/v1/apps/memo/changes", map[string]string{"prompt": "やっぱり別の案"}, nil)
 	e.waitDraft("memo", "READY")

@@ -87,10 +87,11 @@ func slug(name string) string {
 
 type appView struct {
 	store.App
-	URL        string           `json:"url,omitempty"`
-	PreviewURL string           `json:"previewUrl,omitempty"` // release strategy: the not-yet-approved version
-	Actual     *kube.Actual     `json:"actual,omitempty"`
-	Operation  *store.Operation `json:"operation,omitempty"` // active or most recent
+	URL            string           `json:"url,omitempty"`
+	PreviewURL     string           `json:"previewUrl,omitempty"`     // release strategy: the not-yet-approved version
+	CanRestoreData bool             `json:"canRestoreData,omitempty"` // a rollback may also restore the data
+	Actual         *kube.Actual     `json:"actual,omitempty"`
+	Operation      *store.Operation `json:"operation,omitempty"` // active or most recent
 }
 
 func (s *Server) view(ctx context.Context, a store.App, withActual bool) appView {
@@ -101,6 +102,7 @@ func (s *Server) view(ctx context.Context, a store.App, withActual bool) appView
 	if a.Strategy == store.StrategyRelease && a.DraftState == store.DraftPreviewReady && s.AppURLTemplate != "" {
 		v.PreviewURL = strings.ReplaceAll(s.AppURLTemplate, "{id}", a.ID+"-preview")
 	}
+	v.CanRestoreData = s.canRestoreData(ctx, a)
 	if withActual {
 		if act, err := s.Kube.Actual(ctx, a.ID); err == nil {
 			v.Actual = &act
@@ -497,7 +499,7 @@ func (s *Server) rollbackApp(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if a.LiveRelease < 2 {
+	if a.PrevRelease < 1 {
 		writeErr(w, 409, "戻せる前の版がありません(現在の版: %d)", a.LiveRelease)
 		return
 	}
@@ -505,11 +507,25 @@ func (s *Server) rollbackApp(w http.ResponseWriter, r *http.Request) {
 		WithData bool `json:"withData"`
 	}
 	_ = decode(r, &in)
+	if in.WithData && !s.canRestoreData(r.Context(), a) {
+		writeErr(w, 409, "この戻し方では、データは戻せません(戻す先の版に合うデータの保存がありません)")
+		return
+	}
 	param := "withData=0"
 	if in.WithData {
 		param = "withData=1"
 	}
 	s.startOp(w, r, a, store.KindRollback, param, "前の版に戻す依頼を受け付けました")
+}
+
+// canRestoreData: the data snapshot of the live release belongs to the release it replaced, which
+// is only the rollback target right after that approval.
+func (s *Server) canRestoreData(ctx context.Context, a store.App) bool {
+	if a.Strategy != store.StrategyRelease || a.LiveRelease < 1 || a.PrevRelease < 1 {
+		return false
+	}
+	cur, err := s.St.GetRelease(ctx, a.ID, a.LiveRelease)
+	return err == nil && cur.DataSnapshot && cur.Replaced == a.PrevRelease
 }
 
 func (s *Server) listReleases(w http.ResponseWriter, r *http.Request) {

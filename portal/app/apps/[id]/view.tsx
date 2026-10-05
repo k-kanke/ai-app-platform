@@ -123,20 +123,22 @@ export default function View({ initial }: { initial: AppView }) {
       )}
 
       {app.phase === 'READY' && app.url && <p><a className="btn primary" href={app.url}>アプリを開く</a></p>}
-      {isRelease && (app.liveRelease ?? 0) >= 2 && !busy && (
+      {isRelease && (app.prevRelease ?? 0) >= 1 && !busy && (
         <div style={{ marginTop: 8 }}>
           {!confirmRollback ? (
-            <button className="btn" onClick={() => setConfirmRollback(true)}>ひとつ前の版に戻す</button>
+            <button className="btn" onClick={() => setConfirmRollback(true)}>直前の版に戻す</button>
           ) : (
             <div className="card">
-              <p style={{ marginTop: 0 }}>いまの版({app.liveRelease})から、ひとつ前の版({(app.liveRelease ?? 1) - 1})に戻します。</p>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, margin: '8px 0' }}>
-                <input type="checkbox" checked={withData} onChange={(e) => setWithData(e.target.checked)} />
-                入力したデータも、前の版に切り替える直前の状態に戻す
-              </label>
+              <p style={{ marginTop: 0 }}>いまの版({app.liveRelease})から、直前に使っていた版({app.prevRelease})に戻します。</p>
+              {app.canRestoreData && (
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 400, margin: '8px 0' }}>
+                  <input type="checkbox" checked={withData} onChange={(e) => setWithData(e.target.checked)} />
+                  入力したデータも、いまの版に切り替える直前の状態に戻す
+                </label>
+              )}
               <div className="btns">
                 <button className="btn" onClick={() => setConfirmRollback(false)}>やめる</button>
-                <button className="btn primary" onClick={() => act('rollback', { withData })}>戻す</button>
+                <button className="btn primary" onClick={() => act('rollback', { withData: withData && !!app.canRestoreData })}>戻す</button>
               </div>
             </div>
           )}

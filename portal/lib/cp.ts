@@ -4,7 +4,7 @@ export const CP = process.env.CONTROL_PLANE_URL ?? 'http://localhost:8080';
 export type Operation = { id: string; kind: string; state: string; step: string; prompt: string; error?: string; userMessage?: string };
 export type AppView = {
   id: string; name: string; phase: string; url?: string; operation?: Operation;
-  strategy?: string; liveRelease?: number; draftState?: string; previewUrl?: string;
+  strategy?: string; liveRelease?: number; prevRelease?: number; draftState?: string; previewUrl?: string; canRestoreData?: boolean;
 };
 
 export async function listApps(): Promise<AppView[]> {

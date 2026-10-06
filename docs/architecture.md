@@ -436,11 +436,11 @@ sequenceDiagram
 > **深掘りの実装案(ユースケース起点)**: [`deep-dive-preview-release.md`](deep-dive-preview-release.md) —
 > 「AI の成果物を何度も直したい」から Preview と Release を設計する。C を、実際に起きたユースケースから組み直したもの。
 
-> **発表の筋(3 幕)と根拠の整理**: [`talk-story.md`](talk-story.md)
+> **筋と根拠の整理**: [`design-notes.md`](design-notes.md)
 
-> **発表 10 分版**: [`talk-10min.md`](talk-10min.md)
+> **まとめ**: [`summary.md`](summary.md)
 
-### 発表のストーリー(案)
+### ストーリー(案)
 1. 家に毎日使われる紙の表がある(母の食事予定表)
 2. AI が書けるなら、家族が自分で作れるはず。でも**書いたソフトを誰が安全に動かし、直し続けるのか**
 3. 自宅 Kubernetes に小さな Platform を作った(§1〜§10)

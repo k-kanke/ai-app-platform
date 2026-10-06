@@ -1,8 +1,8 @@
-# 発表のストーリー: 内側のループと外側のループ
+# 設計メモ: 内側のループと外側のループ
 
-> **10 分版(絞った発表の構成): [`talk-10min.md`](talk-10min.md)** — メッセージ 1 つ・深掘り 1 つ。こちらの 3 幕版は材料として残す。
+> **絞った整理: [`summary.md`](summary.md)** — メッセージ 1 つ・深掘り 1 つ。こちらの 3 段構成は材料として残す。
 
-Cloud Native Days 学生プロポーザル向けの、発表の筋と根拠の整理。
+筋と根拠の整理。
 設計の詳細は [`deep-dive-preview-release.md`](deep-dive-preview-release.md)、現状の構成は [`architecture.md`](architecture.md)、
 実装中の失敗は [`dev-log.md`](dev-log.md)。
 

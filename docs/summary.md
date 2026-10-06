@@ -1,10 +1,10 @@
-# 発表 10 分版: GitOps を外したら、状態の設計が必要になった
+# まとめ: GitOps を外したら、状態の設計が必要になった
 
-Cloud Native Days 学生プロポーザル向け。**メッセージは 1 つ、深掘りも 1 つ**に絞った版。
-旧版(3 幕・速さ・隔離など)は [`talk-story.md`](talk-story.md)。数字の出典は [`measurements/log.md`](measurements/log.md)。
+**メッセージは 1 つ、深掘りも 1 つ**に絞った整理。
+以前の整理(速さ・隔離など)は [`design-notes.md`](design-notes.md)。数字の出典は [`measurements/log.md`](measurements/log.md)。
 
 > **根拠の凡例**: ✅ 実測・検証済み / 📐 設計のみ(作っていない) / 🔜 これから
-> 発表では、✅ だけを事実として話し、📐 と 🔜 はそう言う。
+> ✅ だけを事実として書き、📐 と 🔜 はそう明記する。
 
 ---
 

@@ -1,5 +1,7 @@
 # アーキテクチャ(2026-10-05 時点の実装)
 
+> **最新の全体像は [`overview.md`](overview.md)**(2026-10-11)。release 方式(draft / お試し版 / 承認 / ロールバック)、worker-02、ノードごとのバックアップ、監視ダッシュボードは本書にまだ反映されていない。本書は個別の詳細(コンポーネント、状態遷移、信頼境界)の参照用。
+
 ITに詳しくない家族が、スマホから自然言語で頼むだけで、自分たち向けの小さなアプリを作り・使い・変更できる、
 自宅 Kubernetes 上の Application Platform。設計の意図は [`plans/plan-2.md`](../plans/plan-2.md)、
 実装中の失敗と判断は [`dev-log.md`](dev-log.md)。この文書は「**いま実際に動いているもの**」だけを書く。
@@ -402,8 +404,8 @@ sequenceDiagram
 
 | 項目 | 状態 |
 |---|---|
-| Stage 2: 別ワークスペース → Preview → 承認 → Build → Registry → Production | **未実装**。今は稼働中のソースを直接変更し、失敗時に snapshot から戻す |
-| image と Data を 1 つの release として扱う rollback / migration | 未実装(Data のスナップショットは毎晩のバックアップのみ) |
+| Stage 2: 別ワークスペース → Preview → 承認 → Production | **release 方式として実装済み**([`overview.md`](overview.md) §4.3)。ただし Build と Registry は使わない(PVC 上の不変の `releases/<n>/`)。家族の既存アプリは従来方式(`inplace`)のまま |
+| image と Data を 1 つの release として扱う rollback / migration | release 方式では、版ごとに Data のスナップショットを保存し、ロールバックで戻せる(実装済み)。image は使わない |
 | Reconciler(CRD / Controller) | **作っていない**。Ingress の収束ループだけが小さな実例 |
 | アプリごとのネットワーク許可(AppDefinition) | 未実装。公開 HTTPS を全アプリに許可 |
 | Control Plane の認証 | なし(Portal 経由と NetworkPolicy と Access に依存) |

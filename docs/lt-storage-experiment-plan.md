@@ -242,6 +242,30 @@ flowchart TD
 
 > 試行(§10)もこの構築も、同じ本物のクラスタで行う。**全消しや Argo CD の prune のような破壊的な操作は、`storage-lab` の外では行わない**。構築のときは §9 の「事前に用意する守り」をもう一度満たす。
 
+
+### 8.1 構築の方針(2026-11-06 決定: 案 O3「アプリのボリュームを NFS に」)
+
+**目的**: 複数ノード間でデータを共有し、アプリがノードをまたいで動けるようにする(偏りの解消、ノード障害時に別ノードで再開)。
+
+**選んだ理由**: 目的が「共有」なので NFS が合う(M-017、M-023)。守りの強化(バックアップの頻度を上げる)は並行して行う。
+**選ばなかった理由**: Longhorn は書き込みが遅く(M-021)余裕の小さいノードで不安定(M-022)。Garage は 2 ノードだと片方が落ちると書けない(M-023)。いずれも 3 ノード以上が前提。
+
+**コードの変更はほぼ要らない(✅ コードで確認)**:
+- Control Plane は PVC の StorageClass を環境変数 `AAP_STORAGE_CLASS` で決める(`control-plane/internal/config/config.go`、`internal/kube/kube.go` の `ensurePVCs`)。今は `kubernetes-platform/manifests/ai-app-platform/control-plane.yaml` で `local-path`。→ `nfs-lab` 相当の名前に変えれば、**新しいアプリの `src` / `data` PVC が NFS になる**。既存の PVC は「作成済みなら維持」なので影響しない。
+- Control Plane 自身の DB(`control-plane-db`)は、同じ manifest で `storageClassName: local-path` と明示されている。→ **SQLite はそのまま `local-path`**(NFS で別ノードから書くと行が欠けた。M-017)。
+- アクセスモードは `ReadWriteOnce` のまま。NFS の PV にはノード固定がないので、どのノードでも使える(🔜 実機で確認)。
+
+**注意(スライドにも書く)**:
+- 「ノードをまたいで**スケール**」は、**配置の自由度と障害時の再開**までを指す。ランタイムの `replicas` は 1 固定(`kube.go`)で、**複数レプリカが同じデータを書く**ことは別の問題。参照アプリは状態をメモリに持って最後に書く方式なので、そのままでは複数レプリカで上書きし合う。
+- 書き込みは `local-path` の約 6 割(IOPS)、fsync は約 3 倍遅い(M-017)。小さな JSON 程度なら影響は小さいはずだが、Agent の書き込み(`src`)への影響は🔜 確認。
+- SQLite を使うアプリは、書くプロセスを 1 つに保つ必要がある(別ノードが加わると行が欠けた)。
+
+**決めること**:
+1. **NFS サーバーの置き場**(最重要)。候補: ①Windows PC に新しい小さな VM(推奨。control-plane の再起動・アップグレードと切り離せる)、②control-plane(今の試行の場所。再起動で全アプリの I/O が止まる)、③NAS を買う。ミニ PC(worker-02 と同居)は、ミニ PC の故障で全アプリが止まるので避ける。
+2. 範囲: 新しいアプリだけ NFS にするか、既存のアプリも移すか(例: `freed` を移して確認)。移す手順は restic のバックアップ → NFS の PVC を作る → 復元(`backup-restore.md`)。
+3. GitOps: provisioner は `kubernetes-platform/manifests/storage/` に Argo CD 管理で置く。NFS サーバー自体は GitOps の外(ノードの設定)。
+4. 切り戻し: `AAP_STORAGE_CLASS` を `local-path` に戻せば、新しいアプリは `local-path` に戻る。移したアプリは、バックアップから戻す。
+
 ## 9. 環境(既存のクラスタで試す)
 
 配置と順番の図、2026-11-06 の現状確認(各ノードのメモリ・ディスク・Pod)は [`lt-storage-lab-layout.md`](lt-storage-lab-layout.md)。

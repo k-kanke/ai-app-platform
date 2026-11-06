@@ -1,0 +1,54 @@
+## before 2026-11-06T03:55:45Z
+ubuntu-26: used=2329 available=1020
+ubuntu-worker-01: used=3592 available=1768
+ubuntu-worker-02: used=1050 available=2280
+ubuntu-26          123m   6%    1902Mi   58%   
+ubuntu-worker-01   181m   4%    3128Mi   59%   
+ubuntu-worker-02   110m   2%    812Mi    25%   
+# StorageClass before:
+local-path nfs-lab 
+node/ubuntu-worker-02 labeled
+NOTES:
+Longhorn is now installed on the cluster!
+
+Please wait a few minutes for other Longhorn components such as CSI deployments, Engine Images, and Instance Managers to be initialized.
+
+Visit our documentation at https://longhorn.io/docs/
+install_sec=90
+engine-image-ei-2f3240cb-ct27g 0/1 ContainerCreating ubuntu-worker-02
+instance-manager-126b98c7d93003728bd739cccbe5fcc0 0/1 ContainerCreating ubuntu-worker-02
+longhorn-driver-deployer-74fc687cd4-vmmtc 1/1 Running ubuntu-worker-02
+longhorn-global-manager-6dc48c46cf-74zcd 1/1 Running ubuntu-worker-01
+longhorn-global-manager-6dc48c46cf-c6b7m 1/1 Running ubuntu-worker-02
+longhorn-global-manager-6dc48c46cf-dxrf9 1/1 Running ubuntu-worker-02
+longhorn-manager-dh62h 2/2 Running 88s
+longhorn-ui-6465f7dc5f-89m89 1/1 Running ubuntu-worker-02
+longhorn-ui-6465f7dc5f-ftkdf 1/1 Running ubuntu-worker-02
+local-path rancher.io/local-path
+longhorn driver.longhorn.io
+longhorn-static driver.longhorn.io
+nfs-lab cluster.local/nfs-lab-nfs-subdir-external-provisioner
+## after (導入から約 7 分) 2026-11-06T04:02:44Z
+ubuntu-26: used=2537 available=812
+ubuntu-worker-01: used=3731 available=1628
+ubuntu-worker-02: used=1528 available=1802
+ubuntu-26          139m   6%    2031Mi   62%   
+ubuntu-worker-01   191m   4%    3206Mi   60%   
+ubuntu-worker-02   123m   3%    1255Mi   38%   
+# Pods in longhorn-system: 22
+longhorn-manager-dh62h                              4m    73Mi   
+longhorn-global-manager-6dc48c46cf-74zcd            2m    36Mi   
+longhorn-csi-plugin-dlws2                           1m    25Mi   
+longhorn-global-manager-6dc48c46cf-dxrf9            2m    19Mi   
+longhorn-global-manager-6dc48c46cf-c6b7m            2m    19Mi   
+csi-provisioner-657ff8fc7-vswf2                     3m    15Mi   
+csi-snapshotter-6997577fbb-7dr6n                    3m    13Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   4m    12Mi   
+csi-attacher-85dccbb957-mpl7q                       1m    12Mi   
+csi-provisioner-657ff8fc7-zq5qj                     1m    11Mi   
+csi-provisioner-657ff8fc7-hsr8r                     1m    11Mi   
+longhorn-driver-deployer-74fc687cd4-vmmtc           0m    10Mi   
+csi-resizer-65788f7b88-55qxb                        1m    10Mi   
+csi-snapshotter-6997577fbb-v7bts                    1m    9Mi    
+# 合計(MiB):
+326

@@ -18,6 +18,14 @@
 | M-013 | 2026-10-05 | 承認の切り替え中の時系列(止まっている約 7 秒の内訳) | 1 | ⚠ 観察 |
 | M-014 | 2026-10-05 | 最終のコードでの再実行(同じ構成での実行ごとのばらつき)と、Ready 表示 → 実際に届くまでの遅れ | 1(C と比較) | ✅ 25/25、⚠ ばらつきは 2 回分 |
 | M-010 | 2026-10-05 | Argo CD が push を拾うまでの時間(第 1 幕の「GitOps の外側のループ」の実測) | 10 | ⚠ 小標本 |
+| M-016 | 2026-11-06 | LT 試行の基準: `local-path` での小さな同期書き込み(fio)と SQLite(WAL)、D1(別ノードで Pending) | fio 3 / SQLite 3 / D1 1 | ⚠ ベースライン |
+| M-017 | 2026-11-06 | NFS(`nfs-subdir-external-provisioner` + control-plane の `nfs-kernel-server`): 導入コスト、fio、SQLite(同一ノード / 別ノード同時) | fio 3 / SQLite 同一ノード 3(全て打ち切り)+診断 4 / 別ノード 1 | ⚠ ベースライン・観察 |
+| M-018 | 2026-11-06 | Garage(v2.5.0、2 ノード・replication factor 2): 導入コスト、S3 の 4 KiB PUT/GET、restic の保存先としての復元 | T4 3 / T5 3 | ⚠ ベースライン・観察 |
+| M-019 | 2026-11-06 | D4: 参照アプリ(家族の食事表、JSON ファイル保存)を S3(Garage)保存に書き換えた差分 | 1 | ⚠ 観察(1 つのアプリ) |
+| M-020 | 2026-11-06 | Longhorn 1.13.0(worker-02 のみ・replica 1): 導入コスト、負荷中のメモリ/CPU、fio、SQLite(WAL) | 導入 1 / fio 3 / SQLite 3 / 負荷中のサンプル 1 | ⚠ ベースライン・観察 |
+| M-021 | 2026-11-06 | Longhorn(worker-01 と worker-02、replica 2): fio、SQLite(WAL)、負荷中のメモリ/CPU | fio 3 / SQLite 3 / 負荷中のサンプル 1 | ⚠ ベースライン・観察 |
+| M-022 | 2026-11-06 | Longhorn(replica 2)を worker-01 に載せて T2 の観測用ワークロードを動かしたときの worker-01 の過負荷(インシデント) | 1 | ⚠ 観察・原因未特定 |
+| M-023 | 2026-11-06 | T2 ノード停止(worker-02 を強制停止): `local-path` / NFS / Garage(2 ノード・factor 2) | 各 1 | ⚠ 観察(n=1) |
 
 ---
 
@@ -343,3 +351,253 @@
   - 通しの途中で自分の実行環境の ssh が切れて再開(`--resume`)した。そのため JSON の作成の wall_s(994 s)は意味を持たない。**操作の所要(op_s)を使う**。
   - 最初のロールバック測定は、プローブの不具合(自分の `pkill` が自身のシェルに一致)でサンプル 0 件だったため破棄して取り直した。
   - n=1、ストレージは local-path(コピー)。XFS の reflink / クォータは**未測定**(🔜)。Cloudflare Access 経由のお試し版 URL は、ここからは確認できていない。
+
+## M-016 LT 試行の基準: `local-path`(fio・SQLite・D1)
+
+- **日時**: 2026-11-06
+- **何を**: 複数ノードのデータの扱い方(NFS・Longhorn・Garage)を比べる LT の試行の**基準**。`local-path` での、小さな同期書き込みの性能(T4)、SQLite(WAL)を複数プロセスから書いたときの整合(T3)、別ノードの Pod が PVC を使えないこと(D1)。計画は [`../lt-storage-experiment-plan.md`](../lt-storage-experiment-plan.md)、配置は [`../lt-storage-lab-layout.md`](../lt-storage-lab-layout.md)。
+- **方法**: `hack/storage-exp/run-bench.sh localpath local-path ubuntu-worker-02`(Pod は `storage-lab` の alpine:3.22、`apk add fio python3`)。
+  - T4: `fio --rw=randwrite --bs=4k --size=128m --fsync=1 --iodepth=1 --ioengine=sync --runtime=60 --time_based`、3 回。
+  - T3: `hack/storage-exp/t3_sqlite.py /data 4 10000`(WAL、`synchronous=FULL`、1 行ごとにコミット、4 プロセス × 1 万行、`locked` は最大 50 回リトライ)、3 回。
+  - D1: `hack/storage-exp/d1-localpath.yaml` と `d1-pod-b.yaml`(worker-02 で書く → worker-01 で同じ PVC を使う)、1 回。
+- **環境**: ホームクラスタ(実環境。家族のアプリが動いている状態)、worker-02(Proxmox 上の VM、3.3 GB)、`local-path`、Kubernetes v1.36.4、fio 3.39、Python 3.12.16。
+- **結果**:
+
+| 項目 | 結果 |
+|---|---|
+| T4 fio(4 KiB 同期書き込み)IOPS | 590.6 / 592.1 / 588.2(n=3) |
+| T4 fsync 遅延 p99 | 約 2.0 ms(3 回とも同じ値。fio のパーセンタイルは区間で丸められる) |
+| T3 SQLite 行数・整合 | 3 回とも 40000/40000 行、`integrity_check` = ok、欠け 0 |
+| T3 `locked`(リトライで吸収) | 32 / 17 / 17 回、失敗した行 0 |
+| T3 所要時間(秒) | 65.87 / 65.18 / 65.5 |
+| D1 | 別ノード(worker-01)の Pod は `Pending`。Events: `1 node(s) didn't match PersistentVolume's node affinity`。PV は worker-02 に固定 |
+
+- **生データ**: `data/storage-localpath-2026-11-06.json`(T4・T3)、`data/storage-localpath-d1-2026-11-06.txt`(D1)
+- **注意・正直な記録**:
+  - n=3、**観察**であって統計ではない。実環境(家族のアプリが動く)の値で、VM の仮想ディスク上。絶対値は自宅の値。
+  - 最初の実行は、`ssh` 経由でコマンドのクォートが外れる**スクリプトのバグ**で結果が出なかった(Pod ではなくホスト側で解釈されていた)。`printf %q` で直して再実行した。
+  - 最初の再実行(IOPS 557〜572)は、fio の fsync 遅延を取り出す場所を誤り(`write` の遅延のみ)、fsync の遅延が取れていなかった。取り出す場所を直して**もう一度全て測り直した**。上の値は 3 回目の実行のもので、IOPS は 1 回目の実行より約 3〜5% 高い(実行ごとのばらつきの範囲と考えるが、n が小さく断定しない)。1・2 回目の実行の IOPS はこの記録に含めない。
+  - `locked` の回数は SQLite の既定のタイムアウト(5 秒)とリトライの設定に依存する。他の方式と比べるときは、**同じ設定**で測る。
+
+## M-017 NFS: 導入コスト・fio・SQLite(同一ノード / 別ノード同時)
+
+- **日時**: 2026-11-06
+- **何を**: LT の試行(T1 導入とメモリ / T4 性能 / T3 SQLite)を NFS で。基準は M-016(`local-path`)。
+- **方法**:
+  - 導入: NFS サーバーは control-plane(`ubuntu-26`)の `nfs-kernel-server`、`/srv/storage-lab` を worker 2 台の IP にだけ export(`rw,sync,no_subtree_check,no_root_squash`)。worker 2 台に `nfs-common`。provisioner は Helm `nfs-subdir-external-provisioner` chart 4.0.18(app 4.0.2)、`storage-lab` namespace、StorageClass `nfs-lab`(既定ではない、`archiveOnDelete=false`)。
+  - T4/T3(同一ノード): `hack/storage-exp/run-bench.sh nfs nfs-lab ubuntu-worker-02 ReadWriteMany`(M-016 と同じ条件)。
+  - T3 診断: `hack/storage-exp/diag-t3.sh nfsdiag nfs-lab ubuntu-worker-02 ReadWriteMany`(条件を小さくして切り分け)。
+  - T3(別ノード): `hack/storage-exp/t3-multinode.sh nfsmulti nfs-lab 2 500`(同じ RWX の PVC を worker-02 と worker-01 の Pod が共有し、同じ DB に同時に書く。各 2 プロセス × 500 行)。
+- **環境**: ホームクラスタ(実環境)。NFS サーバー = control-plane(Windows PC 上の VM、etcd と同じディスク)。worker-02 は別の物理機(LAN 越え)、worker-01 は NFS サーバーと同じ Windows PC 上。NFS のバージョン・マウントオプションは**未確認**(🔜)。
+- **結果**:
+
+| 項目 | 結果 |
+|---|---|
+| 導入 | Helm で 7 秒。provisioner の Pod は約 7 MiB(CPU 2m、5 分後) |
+| 導入前後のノードのメモリ(`kubectl top`) | worker-01 2914 → 3001 MiB、worker-02 893 → 906 MiB(揺れの範囲を含む) |
+| T4 fio(4 KiB 同期書き込み)IOPS | **347.0 / 376.1 / 379.5**(n=3)。M-016 の `local-path` は 588.2〜592.1 |
+| T4 fsync 遅延 p99 | 7.7 / 5.9 / 5.6 ms(`local-path` は約 2.0 ms) |
+| T3 同一ノード(4 プロセス × 1 万行) | **3 回とも 600 秒で打ち切り**(結果なし)。`local-path` は約 65 秒で完了 |
+| T3 診断(同一ノード、小さい条件) | 1×200 行: 2.0 秒。4×100 行: 4.1 秒。4×500 行: 27.7 秒で 2000/2000 行、`integrity_check` = ok、`locked` 0、エラー 0。→ **壊れてはおらず遅い**(約 72 行/秒。`local-path` は約 610 行/秒)。4 万行に換算すると約 550 秒で、打ち切りの説明と矛盾しない(完走させて確認したわけではない) |
+| **T3 別ノード同時書き込み(各 Pod 2 プロセス × 500 行、n=1)** | **`disk I/O error` が合計 1155 回**(A: 510、B: 645)。50 回のリトライでも書けなかった行が 20。最終行数 **1837 / 2000**(A・B のどちらから見ても同じ値)。`integrity_check` = ok |
+
+- **生データ**: `data/storage-nfs-2026-11-06.json`(T4。T3 は打ち切りのため空)、`data/storage-nfs-t1-2026-11-06.txt`、`data/storage-nfs-t3-diag-2026-11-06.txt`、`data/storage-nfs-t3-multinode-2026-11-06.txt`
+- **観察**:
+  1. 同一ノードの Pod からなら、NFS 上でも SQLite(WAL)は**動いた**。ただし `local-path` の約 1/8 の速さで、プロセスを増やしても速くならない。
+  2. **別ノードの Pod が加わると壊れた**。エラーは `disk I/O error`。アプリが成功と受け取った行は 2000 − 20 = 1980 だが、DB には 1837 行しかない。→ **成功を返したのに入っていない行が約 143 行**あると読める(エラー後のリトライによる計算なので、正確な数ではなく目安)。
+  3. **`integrity_check` は ok のままだった**。構造は壊れていなくても、書いたはずの行は欠ける。「整合性チェックが通る」ことは、データが無事である証拠にならない。
+- **注意・正直な記録**:
+  - **n=1**(別ノード)。再現性は未確認。タイミングに依存しうる。
+  - 行の欠けの算出は、`t3_sqlite.py` の成功の判定(リトライのどこかで成功した行)に依存する。INSERT が `disk I/O error` を返したあとにコミット済みだった可能性は考えられるが、それなら行は増える方向なので、欠けの説明にはならない。
+  - T3 の打ち切り(3 回)で、Pod 内にプロセスが残り、2・3 回目に混ざった可能性がある。そのため同一ノード 4 万行の結果は採用しない(診断の結果を使う)。
+  - 診断の最後に `t3_sqlite` のプロセスが 1 つ残って見えたが、正体は未確認。
+  - NFS サーバーは etcd と同じディスク。fio 実行中の API サーバーは `ok`(`/readyz`)で、control-plane の CPU は 16% まで。etcd のレイテンシそのものは**測っていない**。
+  - 試行中、自分のスクリプトに 3 回バグがあった(`ssh` 経由のクォート、`pkill -f` が自分の `sh` に一致、fio の fsync 遅延の取得場所)。いずれも直した上で測り直した。
+
+## M-018 Garage: 導入コスト・S3 の小オブジェクト・restic の保存先としての復元
+
+- **日時**: 2026-11-06
+- **何を**: LT の試行(T1 導入とメモリ / T4 の S3 版 / T5 restic の保存先)を Garage で。Garage は S3 でありファイルではないため、**M-016 の fio・M-017 の NFS とは同じ指標で比べない**(PUT/GET のレイテンシは別の表)。
+- **方法**:
+  - 導入: Garage v2.5.0(タグ日 2026-10-23)の公式 chart(`script/helm/garage`、chart 0.10.4)を `git clone` して Helm で `storage-lab` に導入。値は `hack/storage-exp/garage/values.yaml`(replicaCount 2、replicationFactor 2、PVC は `local-path`・meta 100Mi・data 2Gi、`requests` 50m/64Mi・`limits` メモリ 512Mi、2 つの Pod は別ノードにアンチアフィニティ)。導入後、`garage layout assign` で 2 ゾーン(worker-01 / worker-02)に各 2G を割り当てて `layout apply --version 1`。
+  - T4(S3): `hack/storage-exp/t4_s3.py`(boto3、パススタイル、4 KiB のオブジェクトを順に PUT 300 回 → GET 300 回)、worker-02 の Pod から、3 回。
+  - T5: `hack/storage-exp/t5_restic.sh`(restic 0.18.0、テスト用データ 61 ファイル約 3 MB を Garage に保存 → 削除 → 復元 → `sha256sum` を照合 → `restic check`)、3 回。リポジトリは毎回新規で、本物の R2 のバックアップには触れていない。
+- **環境**: ホームクラスタ(実環境)。`garage-0` が worker-02、`garage-1` が worker-01。S3 のエンドポイントはクラスタ内の Service(`garage.storage-lab.svc:3900`、ClusterIP)。
+- **結果**:
+
+| 項目 | 結果 |
+|---|---|
+| 導入 | Helm で 29 秒。ただし**レイアウトの手動設定が要る**(`layout assign` → `apply`) |
+| 常駐メモリ(導入約 3 分後) | `garage-0` 6 MiB、`garage-1` 7 MiB(CPU 56〜93m)。ノードの `kubectl top` の変化は揺れの範囲 |
+| T4 PUT(4 KiB、n=300 を 3 回) | p50 **71.5 / 92.8 / 136.5 ms**、p99 226 / 193 / 194 ms、9〜10 件/秒 |
+| T4 GET(4 KiB、n=300 を 3 回) | p50 **6.5 / 6.5 / 2.5 ms**、p99 13.7 / 13.3 / 3.4 ms、144 / 144 / 399 件/秒 |
+| T4 エラー | 0 |
+| T5 restic → Garage | 3 回とも **sha256 が全て一致**(61 ファイル)、`restic check` = ok。バックアップ・復元はそれぞれ約 1 秒(date の分解能が 1 秒のため目安) |
+
+- **生データ**: `data/storage-garage-t1-2026-11-06.txt`、`data/storage-garage-t4t5-2026-11-06.txt`
+- **観察**:
+  1. Garage は**とても軽い**(アイドルに近い状態で 1 Pod あたり 6〜7 MiB)。ただし**負荷をかけたときのメモリは未測定**。
+  2. 小さなオブジェクトの **PUT は遅い**(p50 70〜140 ms)。GET は速い(3〜7 ms)。PUT が遅い原因は未確認。2 ノード間の複製の確認待ち(書き込み側の quorum)が一因と推測しているが、**確かめていない**(⚠)。同じ条件の NFS(fsync 5.6〜7.7 ms)や `local-path`(約 2 ms)とは**同じ指標ではない**。
+  3. restic の保存先としては**問題なく使えた**(バックアップ → 全消し → 復元 → 照合 まで通った)。C5(バックアップ置き場)の根拠になる。
+- **注意・正直な記録**:
+  - n=3、観察。T5 のデータは小さい(約 3 MB、61 ファイル)。本物のバックアップ(数 MB〜)とは桁が違わないが、大量のファイルでは未確認。
+  - restic は 0.18.0(alpine のパッケージ)。本物のバックアップは 0.19.1。
+  - 時間の分解能が 1 秒(busybox の `date` が小数秒に未対応)。T5 の時間は目安。
+  - **ノード停止(T2)は未実施**。2 ノード・replication factor 2 で 1 台止めたときの書き込みの可否は、まだ分からない。
+  - chart は**クラスタ全体の CRD** `garagenodes.deuxfleurs.fr` を作る(後片付けで削除する)。
+  - control-plane の `available` が 1053 → 856 MB に下がった。Garage の Pod は control-plane にないので原因は別(NFS サーバーのキャッシュなど)と思うが、**未確認**。余裕が小さいので注意する。
+
+## M-019 D4: JSON ファイル保存のアプリを S3(Garage)保存に書き換える差分
+
+- **日時**: 2026-11-06
+- **何を**: 「Garage は PV の代わりではなく、アプリの作りを変える方式」の中身を数える。プラットフォームの参照アプリ(`aap-gen-meal`、家族の食事表。`store.js` が `meals.json` を一時ファイル + `rename` で保存)を、S3 保存に書き換えたときの差分。
+- **方法**: アプリをコピーし(元のリポジトリは変更していない)、`@aws-sdk/client-s3` を `--before=2026-10-23` で導入(3.1156.0)。`store.js` を S3 の `GetObject` / `PutObject` に、`server.js` を非同期に、テストを `async` に書き換え。テストは Garage に対して実行(Mac から `ssh -L` のトンネル経由、Garage の `lab-bench` バケット、テストごとに別のキー)。
+- **環境**: Node 20.18.2 / npm 10.8.2(Mac)、Garage v2.5.0(M-018 と同じ)。書き換えは私(Claude)が行った作業で、AI Agent が自力でやったときの量ではない。
+- **結果**:
+
+| 項目 | 元 | S3 版 | 変更(追加 / 削除) |
+|---|---|---|---|
+| `store.js` | 45 行 | - | +24 / −14 |
+| `server.js` | 67 行 | - | +7 / −7 |
+| `test/store.test.js` | 58 行 | - | +18 / −20 |
+| `package.json` | 11 行 | - | +6 / −1 |
+| 依存パッケージ | **0** | 26 パッケージ、`node_modules` 18 MB、`package-lock.json` 約 16 KB | - |
+| テスト | 4/4 通過(自己完結) | 4/4 通過(**Garage への接続が必要**) | - |
+
+- **差分**: `data/storage-garage-d4-meal-s3.diff`
+- **観察**:
+  1. **行数の変更は小さい**(アプリ本体 112 行のうち、追加 31 行・削除 21 行)。ただし中身は次の 4 点。
+  2. **同期 → 非同期**が全体に波及する。`createStore` も `set` も `async` になり、`server.js` のハンドラ、`main`、全テストが `await` に変わる。
+  3. **依存が 0 から 26 パッケージ(18 MB)に増えた**。選んだ SDK のバージョンには `@smithy/core` の非推奨の警告(ログのリダクションのバグ)が出た。
+  4. **App Contract が変わる**。今は「永続データは `/data` だけ」(`DATA_DIR`)。S3 版は `S3_ENDPOINT`、`S3_BUCKET`、認証情報(Secret)の環境変数が要り、アプリの Pod が認証情報を持つ。→ プラットフォーム(テンプレート、Agent への指示、NetworkPolicy)側の変更が要る。
+  5. **テストが自己完結でなくなる**(S3 が要る。偽物の S3 を使う手もあるが未実施)。
+  6. 同時書き込みの性質は変わらない: 元も「最後に書いたものが勝つ」で、S3 の 1 オブジェクト全体の `PUT` も同じ。複数の Pod が同じオブジェクトを書くと互いに上書きしうる。条件付き書き込み(`If-Match`)は Garage でどこまで使えるか**未確認**(⚠)。
+- **注意**:
+  - n=1(1 つのアプリ、小さい)。「数十行で済む」とは言えるが、**「数十行で済むから簡単」とは言えない**(上の 2〜5)。
+  - 本番のアプリを S3 に移したわけではない。
+  - 書き込みのレイテンシ(M-018)から、このアプリの PUT が 1 回あたり 70〜140 ms になる可能性は、**実際に測っていない**。
+
+## M-020 Longhorn: 導入コスト・負荷中のメモリ/CPU・fio・SQLite(worker-02 のみ、replica 1)
+
+- **日時**: 2026-11-06
+- **何を**: LT の試行(T1 導入とメモリ / T4 / T3)を Longhorn で。**worker-02 だけ・replica 1** なので、複製・ノード障害時の再開(T2)は**見ていない**。複製がないため、実運用(replica 2 以上)の書き込みの遅さも反映していない。
+- **方法**:
+  - 導入: Helm `longhorn/longhorn` 1.13.0(`longhorn-system`)。値は `hack/storage-exp/longhorn/values.yaml`(replica 1、既定の StorageClass にしない、`longhornManager` / `longhornDriver` / `longhornUI` の nodeSelector とシステム管理コンポーネントの nodeSelector を `storage-lab/longhorn=true`、`createDefaultDiskLabeledNodes`)。事前に worker-02 で `modprobe iscsi_tcp`・`iscsid` の有効化(`sudo`、手動)。**VM のスナップショットは取っていない**。
+  - T4/T3: `hack/storage-exp/run-bench.sh longhorn longhorn ubuntu-worker-02`(M-016 と同じ条件)。
+  - 負荷中のメモリ: `hack/storage-exp/lh-mem-under-load.sh`(fio を 60 秒回しながら 10 秒おきに `kubectl top`)。
+- **環境**: ホームクラスタ(実環境)。worker-02(Proxmox 上、3.3 GB)。データはルートのディスク(`/var/lib/longhorn`、空き 25 GB)。ボリュームは 1 Gi の RWO 1 つ。
+- **結果**:
+
+| 項目 | 結果 |
+|---|---|
+| 導入 | Helm で 90 秒。**全 Pod が Running になるまで約 7 分**(画像の取得) |
+| Pod 数 | 22(CSI の attacher / provisioner / resizer / snapshotter が各 3、global-manager 3、UI 2 など) |
+| Pod のメモリ合計(アイドル) | 約 326 MiB(`longhorn-manager` 73、`global-manager` 36+19+19、`csi-plugin` 25、`instance-manager` 12、ほか) |
+| worker-02 の変化(導入前 → 約 7 分後) | 使用 812 → 1255 MiB(+443)、`available` 2280 → 1802 MB |
+| ボリューム使用中(fio 60 秒)のメモリ | `instance-manager` 54 → 59 MiB、`longhorn-manager` 81 → 87 MiB(ほぼ変わらない) |
+| ボリューム使用中(fio 60 秒)の CPU | `instance-manager` **最大 726m**、worker-02 全体で**最大 1011m**(4 CPU の約 25%) |
+| T4 fio IOPS | **497.1 / 491.3 / 481.9**(n=3)。`local-path` 588〜592、NFS 347〜380 |
+| T4 fsync 遅延 p99 | 3.1 / 3.1 / 3.2 ms(`local-path` 約 2.0、NFS 5.6〜7.7) |
+| T3 SQLite(4 プロセス × 1 万行) | 3 回とも 40000/40000 行、`integrity_check` = ok、欠け 0。所要 77.96 / 77.22 / 78.4 秒(`local-path` 64〜77)。`locked` 24 / 18 / 23 回 |
+| マウント | 1 回目から成功。**`multipathd` が active のままで問題は起きなかった**(公式の既知の落とし穴だが、今回の環境では再現しなかった) |
+| 他ノードへの影響 | `longhorn-global-manager` が 1 つ **worker-01 に載った**(`longhornGlobalManager.nodeSelector` を指定し忘れ。設定漏れ)。control-plane の `available` が 1020 → 812 MB に低下(原因は未確認。CRD の追加で API サーバーのメモリが増えた可能性。Garage 導入時にも 1053 → 856 MB の低下があった) |
+
+- **生データ**: `data/storage-longhorn-t1-2026-11-06.txt`、`data/storage-longhorn-2026-11-06.json`、`data/storage-longhorn-mem-under-load-2026-11-06.txt`
+- **観察**:
+  1. **アイドルの常駐メモリは「3.3 GB のノードに収まらない」ほどではなかった**(+0.45 GB)。事前の仮説(「うちの規模ではオーバースペックの可能性が高い」)は、**メモリについては裏づけられなかった**。
+  2. **負荷をかけたときに増えるのはメモリより CPU**(1 ボリューム・replica 1 で約 1 コア)。
+  3. 性能は `local-path` と NFS の間(IOPS は `local-path` の約 84%、fsync の p99 は約 1.6 倍)。SQLite は壊れず、`local-path` より少し遅い。
+  4. **試していないこと**: replica 2 以上の書き込み(別ノードへの複製のコスト)、ノード障害時の再開、ボリュームが多いときのメモリ、worker-01 に載せたときの余裕。「Longhorn が重い」「軽い」とは断定できない。
+- **注意**:
+  - n=3(fio・SQLite)、負荷中のサンプルは 1 回(`kubectl top` は更新が遅く、短い山を見逃しうる)。
+  - ルートのディスクを使っている(専用ディスクではない)。
+  - 本番の運用を想定した構成(replica 2、3 ノード、専用ディスク)ではない。
+
+## M-021 Longhorn replica 2(worker-01 と worker-02): fio・SQLite・負荷中のメモリ/CPU
+
+- **日時**: 2026-11-06
+- **何を**: M-020(replica 1、worker-02 のみ)に続き、Longhorn を worker-01 にも載せ、**replica 2**(複製が別の物理機)で T4 / T3 と負荷中のメモリ/CPU を測る。
+- **方法**:
+  - worker-01 に Longhorn を載せる: 事前に `sudo`(手動)で `modprobe iscsi_tcp` と `iscsid` の有効化 → `kubectl label node ubuntu-worker-01 storage-lab/longhorn=true node.longhorn.io/create-default-disk=true`。導入中は 20 秒おきに worker-01 の `available` と家族のアプリの Pod を確認(中止の基準: `available` < 300 MB、または `aap-apps` / `platform-system` の Pod の OOM・異常)。
+  - StorageClass `longhorn-r2`(`numberOfReplicas: "2"`、`hack/storage-exp/longhorn/sc-r2.yaml`)。
+  - T4/T3: `hack/storage-exp/run-bench.sh longhorn-r2 longhorn-r2 ubuntu-worker-02`(試験 Pod は worker-02、複製は worker-01 と worker-02)。
+  - 負荷中: `hack/storage-exp/lh-mem-under-load.sh longhorn-r2`。
+- **環境**: ホームクラスタ(実環境)。worker-01(Windows PC 上の VM、5.4 GB)と worker-02(別の物理機の Proxmox 上、3.3 GB)。データはルートのディスク。
+- **結果**:
+
+| 項目 | replica 2 | 参考: replica 1(M-020) | `local-path`(M-016) | NFS(M-017) |
+|---|---|---|---|---|
+| T4 fio IOPS | **110.9 / 113.3 / 106.7** | 482〜497 | 588〜592 | 347〜380 |
+| fsync p99 | **22.9 / 18.7 / 24.8 ms** | 3.1〜3.2 ms | 約 2.0 ms | 5.6〜7.7 ms |
+| T3 SQLite(4 万行) | 全行あり・`integrity_check` ok・欠け 0。**356.35 / 347.16 / 351.56 秒** | 77〜78 秒 | 64〜77 秒 | 完走せず |
+| T3 `locked` | 158 / 135 / 145 回 | 18〜24 回 | 16〜32 回 | - |
+
+| 導入・常駐(worker-01) | 結果 |
+|---|---|
+| Pod | 5 つ(`manager`、`instance-manager`、`csi-plugin`、`engine-image`、`global-manager`)。約 100 秒ですべて Ready |
+| worker-01 の `available` | 約 1690 → 1438 MB(約 −250 MB)。中止の基準には到達せず |
+| 家族のアプリ | 導入中、OOM・再起動なし |
+| 負荷中(fio 60 秒、replica 2) | `instance-manager` のメモリ 55〜60 MiB(変化小)、CPU 最大約 290m。ノード全体の CPU は worker-01・worker-02 とも約 500m(4 CPU の約 12%) |
+
+- **生データ**: `data/storage-longhorn-r2-t1-2026-11-06.txt`、`data/storage-longhorn-r2-2026-11-06.json`、`data/storage-longhorn-r2-mem-under-load-2026-11-06.txt`
+- **観察**:
+  1. **replica を 2 にすると、同期書き込みは大きく遅くなる**。fio の IOPS は replica 1 の約 1/4(`local-path` の約 1/5)、fsync の p99 は約 6〜8 倍。SQLite の所要は約 5 倍。複製を別の物理機に書き、両方の完了を待つコストと見られる(未検証の推測)。
+  2. **データは壊れなかった**(SQLite は全行あり・整合ok)。遅いが正しい。
+  3. **メモリは増えなかった**(負荷中も 55〜60 MiB)。CPU は負荷に応じて使うが、書き込みが遅いぶん、replica 1 より低い。
+  4. 「Longhorn は 3.3 GB のノードに収まらない」は**メモリについては否定**された。ただし書き込みの遅さは、SQLite のように fsync が多い用途では効く。
+- **注意**:
+  - n=3(fio・SQLite)、負荷中のサンプルは 1 回(`kubectl top` は更新が遅い)。
+  - 複製の相手は別の物理機(LAN 越え)。同じ物理機内の VM どうしなら別の値になる。
+  - ルートのディスクを使っている。専用ディスクではない。
+  - 途中、負荷中の観測スクリプトが `kubectl top node` の引数の誤りで 1 回失敗し、直して測り直した(失敗した回の値は採用していない)。
+
+## M-022 Longhorn(replica 2)を worker-01 に載せて T2 の観測を始めたとき、worker-01 が過負荷になった
+
+- **日時**: 2026-11-06 05:02〜05:12 UTC(14:02〜14:12 JST)
+- **何が起きたか**: M-021 の測定後、T2(ノード停止)の準備として ①Longhorn の CSI コントローラ(attacher / provisioner / resizer / snapshotter、各 3 レプリカが worker-02 に偏っていた)を `rollout restart` して worker-01 にも分散させ、②観測用の書き込み Pod 3 つ(Longhorn replica 2 の RWO、NFS の RWX、Garage への S3 書き込み)を起動した。その直後から **worker-01 の負荷が急上昇**した。
+- **観測**:
+  - 05:05:55 UTC: load average **78.8**(1 分)/ 46.5(5 分)/ 19.3(15 分)。`vmstat`: CPU は user 約 50% + system 約 48%、ブロック読み取り(`bi`)は 126〜266 MB/s、後に最大 456 MB/s。`/proc/pressure`: cpu some avg60 56.7、io some avg60 48.4、memory some avg60 28.6。`workingset_refault_file` は 6990 万。→ メモリ圧迫によるページキャッシュの読み直し(スラッシング)の疑い。
+  - Longhorn の replica 2 のボリュームは、worker-01 側の replica が `stopped` のまま、`attach` が 3 分以上完了しなかった(`longhorn-backend` への `attach` が `context deadline exceeded`)。`kubectl top nodes` も一時的に `ServiceUnavailable`(metrics-server が応答しない)。
+  - 同じ時刻に新しい Pod(`t2-s3`)が `ContainerCreating` のまま 3 分以上進まなかった。
+- **対応**: 05:06 に観測用の Pod 3 つを削除 → 約 1 分で load が低下(05:06:53: 36.7 → 05:07:24: 22.6)。さらに Longhorn を worker-01 から外した(ノードのラベルを外し、worker-01 上の Longhorn の Pod を削除、Longhorn のノードの登録を削除、`helm upgrade` で `longhornGlobalManager` の nodeSelector を追加)。05:12 頃に load average 4.6 → 1.8、`available` 約 1.7 GB に戻った。
+- **家族のアプリへの影響**: `aap-apps` の Pod の再起動回数は増えなかった。外から見て応答が遅かったかは**確認できていない**(約 5 分間、負荷が高かった)。
+- **原因**: **特定できていない**。候補: ①worker-01 の余裕が元々小さい(`available` 約 1.5〜1.7 GB。Longhorn の追加で約 250 MB 減っていた)、②CSI の `rollout restart` で Pod が一度に増えた、③新しいボリュームの replica を worker-01 に作る処理(ディスクの読み書き)、④観測用 Pod の `apk add`。切り分けのための再現はしていない(同じことをもう一度起こすリスクがあるため)。
+- **既存の状況(参考)**: 以前からの累積で、Prometheus は 143 回、`cloudflared` は 111〜113 回、Argo CD の `repo-server` は 106 回、Grafana は 59 回再起動している。**worker-01 は、この実験より前から余裕が小さかった可能性が高い**。
+- **結論の扱い**: 「Longhorn のせい」とは断定しない。「余裕の小さい worker に、複製を持つストレージを足して負荷をかけると、他のアプリが同居するノードが不安定になりうる」という観察として扱う。
+- **この結果、Longhorn の T2(ノード停止での再開)は実施していない**(replica 1 の worker-02 だけでは再開を見られないため)。
+- **生データ**: 上記の数値はこのセッションの出力から転記した(未保存の部分がある)。
+
+## M-023 T2 ノード停止: `local-path` / NFS / Garage
+
+- **日時**: 2026-11-06 14:13:40 JST(05:13:40 UTC)に worker-02 の VM を Proxmox で強制停止(Stop)。約 11 分後(05:24 頃)に Start。
+- **何を**: worker-02 の強制停止時に、同時に動かしていた 3 つの「書き込みを続ける Pod」がどうなるか。
+  - `t2-lp`: `local-path` の PVC(基準。今のこの基盤の状態)。最初は worker-02。
+  - `t2-nfs`: NFS(サーバーは control-plane)の RWX。最初は worker-02。
+  - `t2-s3`: Garage(2 ノード、replication factor 2)への S3 書き込みと読み取り。worker-01 に固定(停止する worker-02 とは別)。
+- **方法**: `hack/storage-exp/t2/writers.yaml`(Deployment、`tolerationSeconds` は既定の 300 秒)。ファイル系は 1 秒ごとに連番 + `date +%s` を追記して `sync`。S3 は 1 秒ごとに 4 バイトのオブジェクトを PUT、1 つ前のキーを GET。観測は `hack/storage-exp/t2/observe.sh`(10 秒おき)。
+- **環境**: ホームクラスタ(実環境)。止めた worker-02 には家族のアプリ `freed`(止めてよいと確認済み)、Garage の 1 つ、NFS provisioner が載っていた。
+- **結果**(時刻は UTC、n=1):
+
+| 項目 | `local-path` | NFS | Garage |
+|---|---|---|---|
+| 停止直後の最後の書き込み | 05:13:38(連番 104) | 05:13:38(連番 108) | PUT 成功の最後は n=104(05:13:38) |
+| ノードが `NotReady` | 05:14:37(停止の約 57 秒後) | 同左 | 同左 |
+| 別ノードで再開 | **再開できなかった**(新しい Pod は `Pending`。`didn't match PersistentVolume's node affinity`) | **05:19:31 に worker-01 で再開**(停止から**約 5 分 53 秒**。`NotReady` の約 5 分後に退避) | Pod は動き続けた(worker-01) |
+| 書き込み | worker-02 の復帰後 05:25:58 に再開(連番 104 → 105、**空白 12 分 20 秒**) | 連番 108 → 109(**欠けなし**)、空白 353 秒。最終的に全 511 行で欠けなし | **PUT が 05:13:39 から 05:26:21 まで全て失敗**(約 12 分 42 秒)。`ServiceUnavailable: Could not reach quorum of 2 (1 of 2 request succeeded)` を約 0.8 秒で返す(681 件)。タイムアウトも 7 件 |
+| 読み取り | - | - | **既存のオブジェクトの GET は成功**(約 7 ms) |
+| 復旧 | worker-02 が `Ready`(05:25:01)の約 57 秒後 | - | worker-02 が `Ready` の約 **81 秒後**(05:26:22)に PUT が成功 |
+
+  - **Garage で「失敗」と返した PUT のうち、481 / 688 件(約 7 割)は、実際には保存されていた**(復旧後に HEAD で確認)。「成功」と返したのに存在しないものは、0 件。つまり、**失敗は「書けなかった」ではなく「結果が不明」**として扱う必要がある。
+  - 復旧直後は、LIST の結果が実際の保存数と一致しない時間帯があった(最初の LIST は 135 件、HEAD では 623 件。LIST は同期が進むにつれて増えた)。収束までの時間は**計っていない**。
+- **生データ**: `data/storage-t2-timeline-2026-11-06.txt`(ノードと Pod の状態、10 秒おき)、`data/storage-t2-garage-writer-2026-11-06.jsonl`、`data/storage-t2-garage-keys-2026-11-06.txt`
+- **観察**:
+  1. **`local-path` は止まったまま。** 今のこの基盤の状態(ノードが落ちると止まる)が実測で裏づけられた。
+  2. **NFS は、サーバーが別なら、Pod の再開だけで済んだ**(約 6 分、欠けなし)。ただし NFS サーバー(control-plane)自体が止まれば全員が止まる。
+  3. **Garage は 2 ノード・factor 2 だと、1 台落ちると書き込みが止まる**(読み取りは続く)。これは設定の選択(factor 2・consistent モード)の帰結で、3 ノードなら変わる(未検証)。
+  4. **NFS の約 6 分は、Kubernetes の既定(`NotReady` から 300 秒で退避)が大半**。`tolerationSeconds` を短くすれば短縮できる(未検証)。
+- **注意・限界**:
+  - **n=1**。停止は強制停止(Proxmox の Stop)で、正常なシャットダウンではない。
+  - Longhorn の T2 は実施していない(M-022)。
+  - Garage の `metadata_fsync` / `data_fsync` は既定のまま。強制停止で書き込みの直前のデータが失われうるが、今回は成功と返したものはすべて存在した(n=1)。
+  - 観測用の Pod は単純な追記(1 秒ごと)で、実際のアプリの負荷ではない。
+

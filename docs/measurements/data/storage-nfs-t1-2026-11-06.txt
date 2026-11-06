@@ -1,0 +1,32 @@
+## before 2026-11-06T02:35:39Z
+ubuntu-26: ubuntu-worker-01: kanke@ubuntu-26: Permission denied (publickey,password).
+ubuntu-worker-02: Host key verification failed.
+Host key verification failed.
+ubuntu-26          216m   10%   1848Mi   56%   
+ubuntu-worker-01   240m   6%    2914Mi   55%   
+ubuntu-worker-02   79m    1%    893Mi    27%   
+NAME: nfs-lab
+LAST DEPLOYED: Fri Nov  6 02:35:40 2026
+NAMESPACE: storage-lab
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+install_sec=7
+NAME         PROVISIONER                                             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+local-path   rancher.io/local-path                                   Delete          WaitForFirstConsumer   false                  32d
+nfs-lab      cluster.local/nfs-lab-nfs-subdir-external-provisioner   Delete          Immediate              true                   6s
+NAME                                                       READY   STATUS    RESTARTS   AGE   IP          NODE               NOMINATED NODE   READINESS GATES
+nfs-lab-nfs-subdir-external-provisioner-5c56965f56-2h4xc   1/1     Running   0          6s    10.0.2.11   ubuntu-worker-02   <none>           <none>
+## after-5min 2026-11-06T02:40:46Z
+ubuntu-26: ubuntu-worker-01: kanke@ubuntu-26: Permission denied (publickey,password).
+ubuntu-worker-02: Host key verification failed.
+Host key verification failed.
+ubuntu-26          103m   5%    1973Mi   60%   
+ubuntu-worker-01   184m   4%    3001Mi   57%   
+ubuntu-worker-02   62m    1%    906Mi    28%   
+NAME                                                       CPU(cores)   MEMORY(bytes)   
+nfs-lab-nfs-subdir-external-provisioner-5c56965f56-2h4xc   2m           7Mi             
+## free -m after (Mac から取得 2026-11-06T02:41:09Z)
+ubuntu-26: used=2336 available=1014
+ubuntu-worker-01: used=3535 available=1825
+ubuntu-worker-02: used=1025 available=2305

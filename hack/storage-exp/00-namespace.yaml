@@ -1,0 +1,8 @@
+# LT 試行用の namespace。家族のアプリ(aap-apps / platform-system)には触らない。
+# 片付け: kubectl delete ns storage-lab
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: storage-lab
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

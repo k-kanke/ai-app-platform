@@ -1,0 +1,172 @@
+{
+ "name": "longhorn-r2",
+ "storageclass": "longhorn-r2",
+ "node": "ubuntu-worker-02",
+ "date": "2026-11-06T04:44:58+00:00",
+ "t4_fio": [
+  {
+   "iops": 110.9,
+   "clat_p50_us": 21.4,
+   "clat_p99_us": 50.4,
+   "fsync_p99_us": 22937.6
+  },
+  {
+   "iops": 113.3,
+   "clat_p50_us": 23.2,
+   "clat_p99_us": 53.5,
+   "fsync_p99_us": 18743.3
+  },
+  {
+   "iops": 106.7,
+   "clat_p50_us": 22.9,
+   "clat_p99_us": 53.0,
+   "fsync_p99_us": 24772.6
+  }
+ ],
+ "t3_sqlite": [
+  {
+   "mode": "full",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "locked_total": 158,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "error_samples": [],
+   "wall_sec": 356.35,
+   "per_proc": [
+    {
+     "proc": 3,
+     "locked": 36,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 292.66
+    },
+    {
+     "proc": 1,
+     "locked": 33,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 302.91
+    },
+    {
+     "proc": 2,
+     "locked": 41,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 333.03
+    },
+    {
+     "proc": 0,
+     "locked": 48,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 356.35
+    }
+   ],
+   "integrity_check": "ok",
+   "actual": 40000,
+   "missing": 0
+  },
+  {
+   "mode": "full",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "locked_total": 135,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "error_samples": [],
+   "wall_sec": 347.16,
+   "per_proc": [
+    {
+     "proc": 2,
+     "locked": 12,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 179.22
+    },
+    {
+     "proc": 1,
+     "locked": 38,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 320.7
+    },
+    {
+     "proc": 3,
+     "locked": 42,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 335.63
+    },
+    {
+     "proc": 0,
+     "locked": 43,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 347.15
+    }
+   ],
+   "integrity_check": "ok",
+   "actual": 40000,
+   "missing": 0
+  },
+  {
+   "mode": "full",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "locked_total": 145,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "error_samples": [],
+   "wall_sec": 351.56,
+   "per_proc": [
+    {
+     "proc": 0,
+     "locked": 20,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 221.51
+    },
+    {
+     "proc": 1,
+     "locked": 36,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 292.1
+    },
+    {
+     "proc": 3,
+     "locked": 43,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 334.42
+    },
+    {
+     "proc": 2,
+     "locked": 46,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 351.56
+    }
+   ],
+   "integrity_check": "ok",
+   "actual": 40000,
+   "missing": 0
+  }
+ ]
+}

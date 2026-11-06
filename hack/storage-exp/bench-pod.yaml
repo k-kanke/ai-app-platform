@@ -1,0 +1,24 @@
+# T3/T4 用の試験 Pod。__NAME__ / __SC__ / __NODE__ / __ACCESS__ を run-bench.sh が置換する。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: bench-__NAME__, namespace: storage-lab }
+spec:
+  accessModes: [__ACCESS__]
+  storageClassName: __SC__
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: bench-__NAME__, namespace: storage-lab, labels: { app: bench } }
+spec:
+  restartPolicy: Never
+  nodeSelector: { kubernetes.io/hostname: __NODE__ }
+  containers:
+    - name: c
+      image: alpine:3.22
+      command: ["sleep","7200"]
+      resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { memory: 512Mi }
+      volumeMounts: [{ name: d, mountPath: /data }]
+  volumes: [{ name: d, persistentVolumeClaim: { claimName: bench-__NAME__ } }]

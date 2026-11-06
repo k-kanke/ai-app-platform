@@ -1,0 +1,27 @@
+## before 2026-11-06T03:33:46Z
+ubuntu-26: used=2296 available=1053
+ubuntu-worker-01: used=3487 available=1872
+ubuntu-worker-02: used=1050 available=2280
+ubuntu-26          154m   7%    1862Mi   57%   
+ubuntu-worker-01   182m   4%    2989Mi   56%   
+ubuntu-worker-02   62m    1%    820Mi    25%   
+NAME: garage
+LAST DEPLOYED: Fri Nov  6 03:33:48 2026
+NAMESPACE: storage-lab
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+install_sec=29
+NAME       READY   STATUS    RESTARTS   AGE   IP           NODE               NOMINATED NODE   READINESS GATES
+garage-0   1/1     Running   0          28s   10.0.2.224   ubuntu-worker-02   <none>           <none>
+garage-1   1/1     Running   0          15s   10.0.1.248   ubuntu-worker-01   <none>           <none>
+garagenodes.deuxfleurs.fr                    2026-11-06T03:34:02Z
+## after 2026-11-06T03:37:30Z
+ubuntu-26: used=2493 available=856
+ubuntu-worker-01: used=3483 available=1876
+ubuntu-worker-02: used=1078 available=2252
+ubuntu-26          156m   7%    2045Mi   62%   
+ubuntu-worker-01   220m   5%    2983Mi   56%   
+ubuntu-worker-02   668m   16%   847Mi    26%   
+garage-0   93m   6Mi   
+garage-1   56m   7Mi   

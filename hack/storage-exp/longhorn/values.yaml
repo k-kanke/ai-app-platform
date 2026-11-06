@@ -1,0 +1,22 @@
+# LT 試行用の Longhorn(T1 のみ)。chart 1.13.0。
+# worker-02 だけに載せる(ラベル storage-lab/longhorn=true)。replica 1。既定の StorageClass にしない。
+# 事前: kubectl label node ubuntu-worker-02 storage-lab/longhorn=true node.longhorn.io/create-default-disk=true
+persistence:
+  defaultClass: false
+  defaultClassReplicaCount: 1
+longhornManager:
+  nodeSelector:
+    storage-lab/longhorn: "true"
+longhornGlobalManager:
+  nodeSelector:
+    storage-lab/longhorn: "true"
+longhornDriver:
+  nodeSelector:
+    storage-lab/longhorn: "true"
+longhornUI:
+  nodeSelector:
+    storage-lab/longhorn: "true"
+defaultSettings:
+  defaultReplicaCount: 1
+  createDefaultDiskLabeledNodes: true
+  systemManagedComponentsNodeSelector: "storage-lab/longhorn:true"

@@ -1,0 +1,187 @@
+diff -ruN -x node_modules -x package-lock.json orig/package.json s3/package.json
+--- orig/package.json	2026-11-06 12:44:00
++++ s3/package.json	2026-11-06 12:44:22
+@@ -7,5 +7,10 @@
+     "start": "node server.js",
+     "test": "node --test test/"
+   },
+-  "engines": { "node": ">=20" }
++  "engines": {
++    "node": ">=20"
++  },
++  "dependencies": {
++    "@aws-sdk/client-s3": "3.1156.0"
++  }
+ }
+diff -ruN -x node_modules -x package-lock.json orig/server.js s3/server.js
+--- orig/server.js	2026-11-06 12:44:00
++++ s3/server.js	2026-11-06 12:44:44
+@@ -4,9 +4,7 @@
+ const path = require('node:path');
+ const { createStore } = require('./store');
+ 
+-// App Contract: PORT from the platform, persistent data only under /data.
+ const PORT = Number(process.env.PORT || 8080);
+-const DATA_DIR = process.env.DATA_DIR || '/data';
+ 
+ function createServer(store) {
+   return http.createServer((req, res) => {
+@@ -24,10 +22,10 @@
+         body += c;
+         if (body.length > 10_000) req.destroy();
+       });
+-      req.on('end', () => {
++      req.on('end', async () => {
+         try {
+           const { member, date, slot, value } = JSON.parse(body);
+-          store.set(member, date, slot, value);
++          await store.set(member, date, slot, value);
+           json(res, 200, store.get());
+         } catch (e) {
+           json(res, 400, { error: e.message });
+@@ -59,9 +57,11 @@
+   'application/octet-stream';
+ 
+ if (require.main === module) {
+-  const server = createServer(createStore(DATA_DIR));
+-  server.listen(PORT, () => console.log(`meal app listening on :${PORT}, data in ${DATA_DIR}`));
+-  process.on('SIGTERM', () => server.close(() => process.exit(0)));
++  createStore().then((store) => {
++    const server = createServer(store);
++    server.listen(PORT, () => console.log(`meal app listening on :${PORT}, data in s3://${process.env.S3_BUCKET}`));
++    process.on('SIGTERM', () => server.close(() => process.exit(0)));
++  });
+ }
+ 
+ module.exports = { createServer };
+diff -ruN -x node_modules -x package-lock.json orig/store.js s3/store.js
+--- orig/store.js	2026-11-06 12:44:00
++++ s3/store.js	2026-11-06 12:44:44
+@@ -1,24 +1,34 @@
+ 'use strict';
+-// JSON-file backed store. Last write wins (the latest input is the source of truth).
+-const fs = require('node:fs');
+-const path = require('node:path');
++// S3-backed store (Garage etc.). Last write wins. The whole state is one object.
++const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
+ 
+ const VALID = new Set(['yes', 'no', 'none']);
+ const SLOTS = new Set(['lunch', 'dinner']);
+ 
+-function createStore(dataDir) {
+-  fs.mkdirSync(dataDir, { recursive: true });
+-  const file = path.join(dataDir, 'meals.json');
++async function createStore(opts = {}) {
++  const Bucket = opts.bucket || process.env.S3_BUCKET;
++  const Key = opts.key || 'meals.json';
++  const client =
++    opts.client ||
++    new S3Client({
++      endpoint: process.env.S3_ENDPOINT,
++      region: process.env.S3_REGION || 'garage',
++      forcePathStyle: true,
++    });
+   let state = { members: ['妹', '孝太郎', '母', '父'], answers: {}, updatedAt: null };
+ 
+-  if (fs.existsSync(file)) {
+-    state = { ...state, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
++  try {
++    const r = await client.send(new GetObjectCommand({ Bucket, Key }));
++    state = { ...state, ...JSON.parse(await r.Body.transformToString()) };
++  } catch (e) {
++    if (e.name !== 'NoSuchKey') throw e;
+   }
+ 
+-  function persist() {
+-    const tmp = `${file}.${process.pid}.tmp`;
+-    fs.writeFileSync(tmp, JSON.stringify(state));
+-    fs.renameSync(tmp, file); // atomic: a crash never leaves a half-written file
++  async function persist() {
++    // A single PUT replaces the whole object (readers never see a half-written file).
++    await client.send(
++      new PutObjectCommand({ Bucket, Key, Body: JSON.stringify(state), ContentType: 'application/json' }),
++    );
+   }
+ 
+   const key = (member, date, slot) => `${date}|${slot}|${member}`;
+@@ -28,7 +38,7 @@
+     get() {
+       return { members: state.members, answers: state.answers, updatedAt: state.updatedAt };
+     },
+-    set(member, date, slot, value) {
++    async set(member, date, slot, value) {
+       if (!state.members.includes(member)) throw new Error('unknown member');
+       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('invalid date');
+       if (!SLOTS.has(slot)) throw new Error('invalid slot');
+@@ -37,7 +47,7 @@
+       if (value === 'none') delete state.answers[k];
+       else state.answers[k] = value;
+       state.updatedAt = new Date().toISOString();
+-      persist();
++      await persist();
+     },
+   };
+ }
+diff -ruN -x node_modules -x package-lock.json orig/test/store.test.js s3/test/store.test.js
+--- orig/test/store.test.js	2026-11-06 12:44:00
++++ s3/test/store.test.js	2026-11-06 12:44:44
+@@ -1,41 +1,39 @@
+ 'use strict';
+ const test = require('node:test');
+ const assert = require('node:assert');
+-const fs = require('node:fs');
+-const os = require('node:os');
+-const path = require('node:path');
+ const http = require('node:http');
+ const { createStore } = require('../store');
+ const { createServer } = require('../server');
+ 
+-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'meal-'));
++// Tests run against a real S3 endpoint (S3_ENDPOINT / S3_BUCKET / AWS_* env). Each test uses its own key.
++const tmp = () => ({ key: `test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json` });
+ 
+-test('answers persist across restarts and last write wins', () => {
++test('answers persist across restarts and last write wins', async () => {
+   const dir = tmp();
+-  let s = createStore(dir);
+-  s.set('母', '2026-10-05', 'lunch', 'yes');
+-  s.set('母', '2026-10-05', 'lunch', 'no');
+-  s = createStore(dir); // simulate restart
++  let s = await createStore(dir);
++  await s.set('母', '2026-10-05', 'lunch', 'yes');
++  await s.set('母', '2026-10-05', 'lunch', 'no');
++  s = await createStore(dir); // simulate restart
+   assert.strictEqual(s.get().answers['2026-10-05|lunch|母'], 'no');
+ });
+ 
+-test('none clears an answer', () => {
+-  const s = createStore(tmp());
+-  s.set('父', '2026-10-05', 'dinner', 'yes');
+-  s.set('父', '2026-10-05', 'dinner', 'none');
++test('none clears an answer', async () => {
++  const s = await createStore(tmp());
++  await s.set('父', '2026-10-05', 'dinner', 'yes');
++  await s.set('父', '2026-10-05', 'dinner', 'none');
+   assert.deepStrictEqual(s.get().answers, {});
+ });
+ 
+-test('rejects invalid input', () => {
+-  const s = createStore(tmp());
+-  assert.throws(() => s.set('誰か', '2026-10-05', 'lunch', 'yes'));
+-  assert.throws(() => s.set('母', 'bad', 'lunch', 'yes'));
+-  assert.throws(() => s.set('母', '2026-10-05', 'brunch', 'yes'));
+-  assert.throws(() => s.set('母', '2026-10-05', 'lunch', 'maybe'));
++test('rejects invalid input', async () => {
++  const s = await createStore(tmp());
++  await assert.rejects(() => s.set('誰か', '2026-10-05', 'lunch', 'yes'));
++  await assert.rejects(() => s.set('母', 'bad', 'lunch', 'yes'));
++  await assert.rejects(() => s.set('母', '2026-10-05', 'brunch', 'yes'));
++  await assert.rejects(() => s.set('母', '2026-10-05', 'lunch', 'maybe'));
+ });
+ 
+ test('http contract: /healthz and PUT/GET /api/meals', async () => {
+-  const server = createServer(createStore(tmp()));
++  const server = createServer(await createStore(tmp()));
+   await new Promise((r) => server.listen(0, r));
+   const port = server.address().port;
+   const req = (method, p, body) =>

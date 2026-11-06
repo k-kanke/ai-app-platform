@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: t2-nfs, namespace: storage-lab }
+spec: { accessModes: [ReadWriteMany], storageClassName: nfs-lab, resources: { requests: { storage: 1Gi } } }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: t2-lp, namespace: storage-lab }
+spec: { accessModes: [ReadWriteOnce], storageClassName: local-path, resources: { requests: { storage: 1Gi } } }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: t2-s3-writer, namespace: storage-lab }
+data:
+  w.py: |
+    import boto3, json, time, os
+    from botocore.config import Config
+    s3 = boto3.client("s3", endpoint_url="http://garage.storage-lab.svc:3900", region_name="garage",
+        config=Config(s3={"addressing_style": "path"}, connect_timeout=3, read_timeout=5, retries={"max_attempts": 1}))
+    B = "lab-bench"; pre = "t2-s3/"; n = 0
+    while True:
+        n += 1; t = time.time(); put = get = "ok"
+        try: s3.put_object(Bucket=B, Key=f"{pre}{n}", Body=str(t).encode())
+        except Exception as e: put = type(e).__name__
+        try: s3.get_object(Bucket=B, Key=f"{pre}{max(n-1,1)}")["Body"].read()
+        except Exception as e: get = type(e).__name__
+        print(json.dumps({"n": n, "t": round(t, 1), "put": put, "get": get}), flush=True)
+        time.sleep(max(0, 1 - (time.time() - t)))
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: t2-s3, namespace: storage-lab, labels: { t2: "1" } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: t2-s3 } }
+  template:
+    metadata: { labels: { app: t2-s3, t2: "1" } }
+    spec:
+      nodeSelector: { kubernetes.io/hostname: ubuntu-worker-01 }
+      containers:
+        - name: w
+          image: alpine:3.22
+          command: ["sh","-c","apk add --no-cache py3-boto3 >/dev/null 2>&1 && exec python3 /app/w.py"]
+          envFrom: [{ secretRef: { name: garage-lab-key } }]
+          resources: { requests: { cpu: 20m, memory: 48Mi }, limits: { memory: 256Mi } }
+          volumeMounts: [{ name: s, mountPath: /app }]
+      volumes: [{ name: s, configMap: { name: t2-s3-writer } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: t2-nfs, namespace: storage-lab, labels: { t2: "1" } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: t2-nfs } }
+  template:
+    metadata: { labels: { app: t2-nfs, t2: "1" } }
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference: { matchExpressions: [{ key: kubernetes.io/hostname, operator: In, values: [ubuntu-worker-02] }] }
+      containers:
+        - name: w
+          image: busybox:1.37
+          env: [{ name: NODE, valueFrom: { fieldRef: { fieldPath: spec.nodeName } } }]
+          command: ["sh","-c","f=/data/seq.log; n=$(tail -n1 $f 2>/dev/null | cut -d' ' -f1); n=${n:-0}; echo \"start $(date +%s) node=$NODE last=$n\" >> /data/events.log; while true; do n=$((n+1)); echo \"$n $(date +%s) $NODE\" >> $f; sync; sleep 1; done"]
+          resources: { requests: { cpu: 10m, memory: 8Mi }, limits: { memory: 64Mi } }
+          volumeMounts: [{ name: d, mountPath: /data }]
+      volumes: [{ name: d, persistentVolumeClaim: { claimName: t2-nfs } }]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: t2-lp, namespace: storage-lab, labels: { t2: "1" } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: t2-lp } }
+  template:
+    metadata: { labels: { app: t2-lp, t2: "1" } }
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference: { matchExpressions: [{ key: kubernetes.io/hostname, operator: In, values: [ubuntu-worker-02] }] }
+      containers:
+        - name: w
+          image: busybox:1.37
+          env: [{ name: NODE, valueFrom: { fieldRef: { fieldPath: spec.nodeName } } }]
+          command: ["sh","-c","f=/data/seq.log; n=$(tail -n1 $f 2>/dev/null | cut -d' ' -f1); n=${n:-0}; echo \"start $(date +%s) node=$NODE last=$n\" >> /data/events.log; while true; do n=$((n+1)); echo \"$n $(date +%s) $NODE\" >> $f; sync; sleep 1; done"]
+          resources: { requests: { cpu: 10m, memory: 8Mi }, limits: { memory: 64Mi } }
+          volumeMounts: [{ name: d, mountPath: /data }]
+      volumes: [{ name: d, persistentVolumeClaim: { claimName: t2-lp } }]
+

@@ -1,0 +1,20 @@
+# LT 試行用の Garage(storage-lab)。chart: garage v2.5.0 の script/helm/garage(chart 0.10.4)
+# 2 ノード・replication factor 2。PVC は local-path。2 つの Pod は別々の worker に置く。
+garage:
+  replicationFactor: "2"
+deployment:
+  replicaCount: 2
+persistence:
+  meta: { storageClass: local-path, size: 100Mi }
+  data: { storageClass: local-path, size: 2Gi }
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { memory: 512Mi }
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: garage
+            app.kubernetes.io/instance: garage

@@ -1,0 +1,37 @@
+{
+ "name": "nfs",
+ "storageclass": "nfs-lab",
+ "node": "ubuntu-worker-02",
+ "date": "2026-11-06T03:19:21+00:00",
+ "t4_fio": [
+  {
+   "iops": 347.0,
+   "clat_p50_us": 7.4,
+   "clat_p99_us": 28.8,
+   "fsync_p99_us": 7700.5
+  },
+  {
+   "iops": 376.1,
+   "clat_p50_us": 6.6,
+   "clat_p99_us": 24.2,
+   "fsync_p99_us": 5865.5
+  },
+  {
+   "iops": 379.5,
+   "clat_p50_us": 6.9,
+   "clat_p99_us": 26.0,
+   "fsync_p99_us": 5603.3
+  }
+ ],
+ "t3_sqlite": [
+  {
+   "error": "timeout_or_crash"
+  },
+  {
+   "error": "timeout_or_crash"
+  },
+  {
+   "error": "timeout_or_crash"
+  }
+ ]
+}

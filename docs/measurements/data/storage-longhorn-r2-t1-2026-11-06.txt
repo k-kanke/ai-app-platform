@@ -1,0 +1,11 @@
+## before(worker-01 に載せる前) 2026-11-06T04:21:55Z
+ubuntu-26: used=2558 available=791
+ubuntu-worker-01: used=3754 available=1605
+ubuntu-worker-02: used=1572 available=1758
+node/ubuntu-worker-01 labeled
+t+20s worker-01 available=1690MB family_pods_bad=0
+t+40s worker-01 available=1546MB family_pods_bad=0
+t+60s worker-01 available=1478MB family_pods_bad=0
+t+80s worker-01 available=1438MB family_pods_bad=0
+t+100s worker-01 available=1448MB family_pods_bad=0
+worker-01 の Longhorn Pod: 5 個 すべて Ready

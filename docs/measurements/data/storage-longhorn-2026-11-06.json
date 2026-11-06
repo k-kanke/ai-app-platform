@@ -1,0 +1,172 @@
+{
+ "name": "longhorn",
+ "storageclass": "longhorn",
+ "node": "ubuntu-worker-02",
+ "date": "2026-11-06T04:10:18+00:00",
+ "t4_fio": [
+  {
+   "iops": 497.1,
+   "clat_p50_us": 16.5,
+   "clat_p99_us": 40.2,
+   "fsync_p99_us": 3096.6
+  },
+  {
+   "iops": 491.3,
+   "clat_p50_us": 17.3,
+   "clat_p99_us": 41.2,
+   "fsync_p99_us": 3096.6
+  },
+  {
+   "iops": 481.9,
+   "clat_p50_us": 18.6,
+   "clat_p99_us": 42.8,
+   "fsync_p99_us": 3227.6
+  }
+ ],
+ "t3_sqlite": [
+  {
+   "mode": "full",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "locked_total": 24,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "error_samples": [],
+   "wall_sec": 77.96,
+   "per_proc": [
+    {
+     "proc": 0,
+     "locked": 4,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 50.52
+    },
+    {
+     "proc": 3,
+     "locked": 5,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 68.05
+    },
+    {
+     "proc": 1,
+     "locked": 8,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 75.21
+    },
+    {
+     "proc": 2,
+     "locked": 7,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 77.95
+    }
+   ],
+   "integrity_check": "ok",
+   "actual": 40000,
+   "missing": 0
+  },
+  {
+   "mode": "full",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "locked_total": 18,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "error_samples": [],
+   "wall_sec": 77.22,
+   "per_proc": [
+    {
+     "proc": 3,
+     "locked": 1,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 43.66
+    },
+    {
+     "proc": 2,
+     "locked": 3,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 57.46
+    },
+    {
+     "proc": 0,
+     "locked": 6,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 67.64
+    },
+    {
+     "proc": 1,
+     "locked": 8,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 77.22
+    }
+   ],
+   "integrity_check": "ok",
+   "actual": 40000,
+   "missing": 0
+  },
+  {
+   "mode": "full",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "locked_total": 23,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "error_samples": [],
+   "wall_sec": 78.4,
+   "per_proc": [
+    {
+     "proc": 3,
+     "locked": 0,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 37.93
+    },
+    {
+     "proc": 1,
+     "locked": 5,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 55.04
+    },
+    {
+     "proc": 2,
+     "locked": 8,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 75.71
+    },
+    {
+     "proc": 0,
+     "locked": 10,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "error_samples": [],
+     "sec": 78.4
+    }
+   ],
+   "integrity_check": "ok",
+   "actual": 40000,
+   "missing": 0
+  }
+ ]
+}

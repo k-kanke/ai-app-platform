@@ -1,0 +1,19 @@
+namespace/storage-lab created
+persistentvolumeclaim/d1-data created
+pod/d1-pod-a created
+pod/d1-pod-a condition met
+== pod-a log
+hello-from-a
+== pvc/pv
+NAME      STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+d1-data   Bound    pvc-08b8b698-c8ca-47d8-82a9-95989e553543   100Mi      RWO            local-path     <unset>                 5s
+pvc-08b8b698-c8ca-47d8-82a9-95989e553543   ubuntu-worker-02   d1-data
+pod "d1-pod-a" deleted from storage-lab namespace
+pod/d1-pod-b created
+== pod-b
+NAME       READY   STATUS    RESTARTS   AGE   IP       NODE     NOMINATED NODE   READINESS GATES
+d1-pod-b   0/1     Pending   0          20s   <none>   <none>   <none>           <none>
+Events:
+  Type     Reason            Age   From               Message
+  ----     ------            ----  ----               -------
+  Warning  FailedScheduling  20s   default-scheduler  0/3 nodes are available: 1 node(s) didn't match PersistentVolume's node affinity, 1 node(s) didn't match Pod's node affinity/selector, 1 node(s) had untolerated taint(s). no new claims to deallocate, preemption: 0/3 nodes are available: 3 Preemption is not helpful for scheduling.

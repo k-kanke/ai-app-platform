@@ -1,0 +1,22 @@
+# D1: local-path の PVC は最初に使った Pod のノードに固定される。
+# pod-a を worker-02 で動かして書き込み → 消す → pod-b を worker-01 で同じ PVC に付ける。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: d1-data, namespace: storage-lab }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: { requests: { storage: 100Mi } }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: d1-pod-a, namespace: storage-lab }
+spec:
+  restartPolicy: Never
+  nodeSelector: { kubernetes.io/hostname: ubuntu-worker-02 }
+  containers:
+    - name: c
+      image: busybox:1.37
+      command: ["sh","-c","echo hello-from-a > /data/hello.txt && cat /data/hello.txt && sleep 3600"]
+      volumeMounts: [{ name: d, mountPath: /data }]
+  volumes: [{ name: d, persistentVolumeClaim: { claimName: d1-data } }]

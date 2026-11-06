@@ -1,0 +1,33 @@
+OK: 9 MiB in 19 packages
+## idle(ボリューム 1 つをマウント済み) 04:11:23
+longhorn-manager-dh62h                              19m   81Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   17m   54Mi   
+longhorn-global-manager-6dc48c46cf-74zcd            3m    39Mi   
+ubuntu-worker-02   183m   4%    1153Mi   35%   
+## fio 実行中 +10s 04:11:33
+longhorn-manager-dh62h                              19m   81Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   17m   54Mi   
+longhorn-global-manager-6dc48c46cf-74zcd            3m    39Mi   
+ubuntu-worker-02   183m   4%    1153Mi   35%   
+## fio 実行中 +20s 04:11:43
+longhorn-manager-dh62h                              22m    87Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   344m   58Mi   
+longhorn-global-manager-6dc48c46cf-74zcd            4m     40Mi   
+ubuntu-worker-02   621m   15%   1171Mi   36%   
+## fio 実行中 +30s 04:11:54
+longhorn-manager-dh62h                              8m     87Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   726m   59Mi   
+longhorn-global-manager-6dc48c46cf-74zcd            3m     40Mi   
+ubuntu-worker-02   1011m   25%   1174Mi   36%   
+## fio 実行中 +40s 04:12:04
+longhorn-manager-dh62h                              8m     87Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   726m   59Mi   
+longhorn-global-manager-6dc48c46cf-74zcd            3m     40Mi   
+ubuntu-worker-02   1011m   25%   1174Mi   36%   
+## fio 実行中 +50s 04:12:14
+longhorn-manager-dh62h                              11m    87Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   726m   59Mi   
+longhorn-global-manager-6dc48c46cf-74zcd            2m     40Mi   
+ubuntu-worker-02   991m   24%   1173Mi   36%   
+pod "bench-lhmem" deleted from storage-lab namespace
+persistentvolumeclaim "bench-lhmem" deleted from storage-lab namespace

@@ -1,0 +1,12 @@
+# LT 試行用: replica 2 の StorageClass(既定ではない)。後片付けで削除する。
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: { name: longhorn-r2 }
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "2"
+  staleReplicaTimeout: "30"
+  fsType: ext4

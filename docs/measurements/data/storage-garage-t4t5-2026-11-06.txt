@@ -1,0 +1,13 @@
+pod/s3-bench created
+pod/s3-bench condition met
+OK: 196 MiB in 51 packages
+restic 0.18.0 compiled with go1.24.12 on linux/amd64
+== T4 S3 (n=3)
+{"put_4KiB": {"n": 300, "errors": 0, "p50_ms": 71.46, "p99_ms": 226.38, "ops_per_sec": 10.4}, "get_4KiB": {"n": 300, "errors": 0, "p50_ms": 6.48, "p99_ms": 13.68, "ops_per_sec": 143.6}}
+{"put_4KiB": {"n": 300, "errors": 0, "p50_ms": 92.78, "p99_ms": 192.54, "ops_per_sec": 9.8}, "get_4KiB": {"n": 300, "errors": 0, "p50_ms": 6.51, "p99_ms": 13.27, "ops_per_sec": 144.2}}
+{"put_4KiB": {"n": 300, "errors": 0, "p50_ms": 136.54, "p99_ms": 193.65, "ops_per_sec": 9.0}, "get_4KiB": {"n": 300, "errors": 0, "p50_ms": 2.52, "p99_ms": 3.42, "ops_per_sec": 398.8}}
+== T5 restic -> Garage (n=3)
+{"files":61,"kb":3036,"sha256_match":true,"restic_check":"ok","sec":{"init":3.00,"backup":1.00,"restore":1.00,"check":1.00}}
+{"files":61,"kb":3036,"sha256_match":true,"restic_check":"ok","sec":{"init":3.00,"backup":1.00,"restore":1.00,"check":1.00}}
+{"files":61,"kb":3036,"sha256_match":true,"restic_check":"ok","sec":{"init":3.00,"backup":1.00,"restore":1.00,"check":0.00}}
+exit=0

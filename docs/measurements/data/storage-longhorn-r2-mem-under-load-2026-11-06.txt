@@ -1,0 +1,39 @@
+OK: 9 MiB in 19 packages
+## idle(ボリューム 1 つをマウント済み) 04:46:08
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   48m   97Mi   
+longhorn-manager-dh62h                              36m   80Mi   
+longhorn-manager-mhpxf                              12m   76Mi   
+ubuntu-worker-01   429m   10%   3338Mi   63%   
+ubuntu-worker-02   336m   8%    1244Mi   38%   
+## fio 実行中 +10s 04:46:19
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   48m   97Mi   
+longhorn-manager-dh62h                              36m   80Mi   
+longhorn-manager-mhpxf                              12m   76Mi   
+ubuntu-worker-01   429m   10%   3338Mi   63%   
+ubuntu-worker-02   336m   8%    1244Mi   38%   
+## fio 実行中 +20s 04:46:29
+longhorn-manager-dh62h                              10m   81Mi   
+longhorn-manager-mhpxf                              7m    76Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   85m   60Mi   
+ubuntu-worker-01   350m   8%    3317Mi   63%   
+ubuntu-worker-02   341m   8%    1205Mi   37%   
+## fio 実行中 +30s 04:46:40
+longhorn-manager-dh62h                              12m    86Mi   
+longhorn-manager-mhpxf                              5m     77Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   290m   60Mi   
+ubuntu-worker-01   525m   13%   3379Mi   64%   
+ubuntu-worker-02   518m   12%   1209Mi   37%   
+## fio 実行中 +40s 04:46:50
+longhorn-manager-dh62h                              8m     89Mi   
+longhorn-manager-mhpxf                              7m     77Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   292m   60Mi   
+ubuntu-worker-01   460m   11%   3357Mi   63%   
+ubuntu-worker-02   511m   12%   1220Mi   37%   
+## fio 実行中 +50s 04:47:01
+longhorn-manager-dh62h                              8m     89Mi   
+longhorn-manager-mhpxf                              7m     77Mi   
+instance-manager-126b98c7d93003728bd739cccbe5fcc0   292m   60Mi   
+ubuntu-worker-01   460m   11%   3357Mi   63%   
+ubuntu-worker-02   511m   12%   1220Mi   37%   
+pod "bench-lhmem" deleted from storage-lab namespace
+persistentvolumeclaim "bench-lhmem" deleted from storage-lab namespace

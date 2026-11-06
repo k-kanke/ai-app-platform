@@ -1,0 +1,157 @@
+{
+ "name": "localpath",
+ "storageclass": "local-path",
+ "node": "ubuntu-worker-02",
+ "date": "2026-11-06T02:22:32+00:00",
+ "t4_fio": [
+  {
+   "iops": 590.6,
+   "clat_p50_us": 9.9,
+   "clat_p99_us": 34.0,
+   "fsync_p99_us": 1990.7
+  },
+  {
+   "iops": 592.1,
+   "clat_p50_us": 10.7,
+   "clat_p99_us": 34.0,
+   "fsync_p99_us": 1990.7
+  },
+  {
+   "iops": 588.2,
+   "clat_p50_us": 9.5,
+   "clat_p99_us": 34.0,
+   "fsync_p99_us": 1990.7
+  }
+ ],
+ "t3_sqlite": [
+  {
+   "journal_mode": "wal",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "actual": 40000,
+   "missing": 0,
+   "integrity_check": "ok",
+   "locked_total": 32,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "wall_sec": 65.87,
+   "per_proc": [
+    {
+     "proc": 0,
+     "locked": 8,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 62.8
+    },
+    {
+     "proc": 1,
+     "locked": 9,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 63.12
+    },
+    {
+     "proc": 3,
+     "locked": 7,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 65.74
+    },
+    {
+     "proc": 2,
+     "locked": 8,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 65.86
+    }
+   ]
+  },
+  {
+   "journal_mode": "wal",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "actual": 40000,
+   "missing": 0,
+   "integrity_check": "ok",
+   "locked_total": 17,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "wall_sec": 65.18,
+   "per_proc": [
+    {
+     "proc": 2,
+     "locked": 0,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 20.58
+    },
+    {
+     "proc": 0,
+     "locked": 3,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 37.54
+    },
+    {
+     "proc": 1,
+     "locked": 6,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 60.29
+    },
+    {
+     "proc": 3,
+     "locked": 8,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 65.17
+    }
+   ]
+  },
+  {
+   "journal_mode": "wal",
+   "procs": 4,
+   "rows_each": 10000,
+   "expected": 40000,
+   "actual": 40000,
+   "missing": 0,
+   "integrity_check": "ok",
+   "locked_total": 17,
+   "other_errors_total": 0,
+   "failed_rows_total": 0,
+   "wall_sec": 65.5,
+   "per_proc": [
+    {
+     "proc": 0,
+     "locked": 0,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 19.4
+    },
+    {
+     "proc": 2,
+     "locked": 2,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 39.12
+    },
+    {
+     "proc": 3,
+     "locked": 7,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 53.24
+    },
+    {
+     "proc": 1,
+     "locked": 8,
+     "other_errors": 0,
+     "failed_rows": 0,
+     "sec": 65.49
+    }
+   ]
+  }
+ ]
+}

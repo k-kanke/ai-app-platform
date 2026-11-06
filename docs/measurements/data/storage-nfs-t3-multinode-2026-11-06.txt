@@ -1,0 +1,23 @@
+persistentvolumeclaim/bench-nfsmulti created
+pod/bench-nfsmulti created
+pod/bench-nfsmulti-b created
+pod/bench-nfsmulti condition met
+pod/bench-nfsmulti-b condition met
+OK: 46 MiB in 33 packages
+OK: 46 MiB in 33 packages
+== init (worker-02)
+{"mode": "init", "journal_mode": "wal"}
+== 2 つの Pod から同時に書く (各 2 プロセス × 500 行)
+-- pod A (worker-02)
+{"mode": "join", "procs": 2, "rows_each": 500, "expected": 1000, "locked_total": 0, "other_errors_total": 510, "failed_rows_total": 8, "error_samples": ["disk I/O error"], "wall_sec": 68.34, "per_proc": [{"proc": 1, "locked": 0, "other_errors": 264, "failed_rows": 4, "error_samples": ["disk I/O error"], "sec": 68.04}, {"proc": 0, "locked": 0, "other_errors": 246, "failed_rows": 4, "error_samples": ["disk I/O error"], "sec": 68.15}]}
+-- pod B (worker-01)
+{"mode": "join", "procs": 2, "rows_each": 500, "expected": 1000, "locked_total": 0, "other_errors_total": 645, "failed_rows_total": 12, "error_samples": ["disk I/O error"], "wall_sec": 24.07, "per_proc": [{"proc": 1, "locked": 0, "other_errors": 320, "failed_rows": 6, "error_samples": ["disk I/O error"], "sec": 21.95}, {"proc": 0, "locked": 0, "other_errors": 325, "failed_rows": 6, "error_samples": ["disk I/O error"], "sec": 23.52}]}
+== check (worker-02)
+{"mode": "check", "integrity_check": "ok", "actual": 1837}
+expected_rows=2000
+== check (worker-01)
+{"mode": "check", "integrity_check": "ok", "actual": 1837}
+pod "bench-nfsmulti" deleted from storage-lab namespace
+pod "bench-nfsmulti-b" deleted from storage-lab namespace
+persistentvolumeclaim "bench-nfsmulti" deleted from storage-lab namespace
+exit=0

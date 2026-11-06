@@ -1,0 +1,17 @@
+persistentvolumeclaim/bench-nfsdiag unchanged
+pod/bench-nfsdiag configured
+pod/bench-nfsdiag condition met
+OK: 46 MiB in 33 packages
+== procs=1 rows=200
+{"journal_mode": "wal", "procs": 1, "rows_each": 200, "expected": 200, "actual": 200, "missing": 0, "integrity_check": "ok", "locked_total": 0, "other_errors_total": 0, "failed_rows_total": 0, "error_samples": [], "wall_sec": 2.0, "per_proc": [{"proc": 0, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 1.97}]}
+== procs=2 rows=100
+{"journal_mode": "wal", "procs": 2, "rows_each": 100, "expected": 200, "actual": 200, "missing": 0, "integrity_check": "ok", "locked_total": 0, "other_errors_total": 0, "failed_rows_total": 0, "error_samples": [], "wall_sec": 2.04, "per_proc": [{"proc": 1, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 1.31}, {"proc": 0, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 2.0}]}
+== procs=4 rows=100
+{"journal_mode": "wal", "procs": 4, "rows_each": 100, "expected": 400, "actual": 400, "missing": 0, "integrity_check": "ok", "locked_total": 0, "other_errors_total": 0, "failed_rows_total": 0, "error_samples": [], "wall_sec": 4.08, "per_proc": [{"proc": 1, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 3.04}, {"proc": 3, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 3.21}, {"proc": 2, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 3.79}, {"proc": 0, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 4.03}]}
+== procs=4 rows=500
+{"journal_mode": "wal", "procs": 4, "rows_each": 500, "expected": 2000, "actual": 2000, "missing": 0, "integrity_check": "ok", "locked_total": 0, "other_errors_total": 0, "failed_rows_total": 0, "error_samples": [], "wall_sec": 27.74, "per_proc": [{"proc": 0, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 20.62}, {"proc": 3, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 21.84}, {"proc": 1, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 27.69}, {"proc": 2, "locked": 0, "other_errors": 0, "failed_rows": 0, "error_samples": [], "sec": 27.69}]}
+== 残プロセス確認
+1
+pod "bench-nfsdiag" deleted from storage-lab namespace
+persistentvolumeclaim "bench-nfsdiag" deleted from storage-lab namespace
+exit=0

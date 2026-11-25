@@ -10,6 +10,39 @@
 
 ---
 
+## 現在の状態(2026-11-25 終了時点)
+
+| Phase | 内容 | 実機 | 確認 |
+|---|---|---|---|
+| 0 | `aap-agents` namespace、PodSecurity、NetworkPolicy、RBAC、クォータ | ✅ 反映済み | 実機で確認 |
+| 1 | 作業場(PVC)と Implementer Job、タスク API | ✅ 反映済み | Go のテスト(`-race`)、kind の通しテスト、実機のタスク |
+| 2 | patch の回収、ハッシュに縛られた承認、genkan の「タスク」画面 | ✅ 反映済み | 同上、ブラウザ |
+| 3 | LLM ゲートウェイ(タスクのトークン、リクエスト数の上限) | ✅ 反映済み(**キーなし**) | 本物の CLI と本物のゲートウェイでローカル確認、実機でキーなしの 503 まで確認 |
+| 3 | 出口の FQDN 許可リスト | ❌ **動かず、元に戻した** | 実機で DNS が通らなかった。理由と対処は Phase 3 の節 |
+| 4 | Publisher と GitHub 連携(PR 作成) | ✅ 反映済み(**GitHub App なし**) | 本物の git とローカルのベアリポジトリでテスト。実際の GitHub は未確認 |
+| 5 | 承認ポリシー(Pod、Job) | ✅ 反映済み | 実機の dry-run、kind、実際のタスク |
+| 6 | チャットから依頼(ルールベース) | ✅ 反映済み | 実際のブラウザ(偽の Control Plane) |
+
+**今できること**: genkan のチャットか「タスク」画面から依頼 → エージェントが clone して作業を始める。**キーがないので、今は「API キーが設定されていません」と説明つきで失敗する**。
+
+**🖐 あなたの手作業(順番どおり。手順は [`multi-agent-manual-steps.md`](multi-agent-manual-steps.md))**
+1. ゲートウェイに API キーを入れる(ubuntu-26 で 1 コマンド)→ 依頼 → 差分ができ → 承認、まで動く。
+2. GitHub App を作る([`multi-agent-github-app.md`](multi-agent-github-app.md))→ 承認した差分が PR になり、チャットに「PR を開いてマージする」ボタンが出る。
+
+**まだ確かめていないこと**
+- 実際の Gemini による実装(キーがないため)と、実際の GitHub への push / PR(App がないため)。
+- ブラウザでの、却下、やめる、失敗時の表示。
+- Publisher の Job が、実機の Pod として動くこと(コードと、本物の git でのテストはある)。
+
+**既知の制限と課題**
+- 出口の制限は、「LAN、クラスタ、他の namespace は遮断。公開 HTTPS はどこでも可」まで(FQDN 許可リストは動かなかった)。
+- 既存の `TestReleaseStrategyLifecycle` が、まれに落ちる(タスクの変更前から。直していない)。
+- 家族向けの `agent-runtime/agents/gemini.sh` にも、`kill` されると `exit 0` になる同じ書き方がある(後段の検査があるので、今は害がない。直すかは別の判断)。
+- Publisher は、依存を足す変更(ロックファイル)や、`Dockerfile`、`.github/`、`deploy/` の変更を、既定で拒否する。
+- 意図しない混入: あなたの未コミットの変更(`docs/slide-assets/terminal-d1-pending.html`)が、コミット `ecfee12` に入って push された。
+
+---
+
 ## 2026-11-25 Phase 0: 下準備
 
 **やったこと**(リポジトリ `kubernetes-platform`、ブランチ `master`、コミット `8865c7a`)

@@ -160,12 +160,177 @@ flowchart LR
 - `AGENTS.md` の「変更は稼働中の Source を直接書き換える」制限は、Implementer が workspace
   (リポジトリのコピー)だけを触る形にすると解消できる。Stage 2 の Isolated Workspace に当たる。
 - Agent に Secret を渡す現行の仕組み(`agent-credentials`)は、LLM ゲートウェイに置き換える。
+- Pod の実体を Agent Sandbox に任せる案は §9 を参照。独自 CRD(`AgentRole` / `AgentRun`)を作る前に、
+  `SandboxTemplate` / `SandboxClaim` で足りるかを確かめる。
 
-## 9. 未決事項
+## 9. Agent Sandbox を土台にした場合の構成
+
+> 調査日 2026-11-25。出典は §11。ここに書く仕様は `docs/api.md`(`kubernetes-sigs/agent-sandbox` の
+> main)で確認したもの。**未確認の点は §10 の未決事項に回した。**
+
+### 9.1 Agent Sandbox とは
+
+Kubernetes SIG Apps のプロジェクト。「1 Pod の隔離環境」を CRD で宣言し、controller が Pod・Service・PVC を管理する。
+API は `v1beta1`(2026-11-20 時点の最新リリースは v1.0.12)。
+
+| CRD | 役割 | 主な項目 |
+|---|---|---|
+| `Sandbox` | 1 Pod + 安定した名前 + 任意の PVC | `podTemplate`、`volumeClaimTemplates`、`shutdownTime`、`operatingMode`(Running / Suspended) |
+| `SandboxTemplate` | 再利用する実行環境の定義 | `podTemplate`、`networkPolicy`(テンプレートごとに 1 つ、controller が管理)、`envVarsInjectionPolicy`(既定 Disallowed) |
+| `SandboxClaim` | テンプレートから Sandbox を 1 つ要求する | `warmPoolRef`、`lifecycle`(期限・完了後の TTL)、`env`、`volumeClaimTemplates` |
+| `SandboxWarmPool` | 起動済みの Sandbox を事前に用意 | `replicas`、`sandboxTemplateRef` |
+
+構成要素: `agent-sandbox-controller`(Sandbox)、拡張 controller(Claim / Template / WarmPool。opt-in)、
+`sandbox-router`(Sandbox への HTTP/gRPC の経路・認可・TLS)、`sandboxd`(Sandbox 内で動く
+プロセス実行・ファイル操作の gRPC デーモン)、Go / Python / TypeScript の SDK。
+隔離は gVisor や Kata などの RuntimeClass を選べる(デプロイ側の選択)。
+
+### 9.2 構成図
+
+```mermaid
+flowchart LR
+    user["スマホ / genkan"]
+
+    subgraph plat["platform-system"]
+        orch["Orchestrator / Control Plane<br/>(Go・SQLite)<br/>SandboxClaim を作る・結果を回収"]
+        pub["Publisher<br/>固定コード・GitHub トークン"]
+        adm["Admission Policy<br/>ValidatingAdmissionPolicy<br/>テンプレート外の Pod を拒否"]
+    end
+
+    subgraph asys["agent-sandbox-system"]
+        ctl["agent-sandbox-controller<br/>+ 拡張 controller"]
+        router["sandbox-router<br/>経路・認可"]
+    end
+
+    subgraph agents["aap-agents (専用 namespace)"]
+        tpl_e["SandboxTemplate<br/>explorer"]
+        tpl_i["SandboxTemplate<br/>implementer"]
+        pool["SandboxWarmPool<br/>(任意)"]
+        claim["SandboxClaim<br/>(1 タスク = 1 つ)"]
+        sb["Sandbox → Pod<br/>gVisor + sandboxd<br/>SA トークンなし"]
+        np["NetworkPolicy<br/>(テンプレートごと・controller が管理)"]
+    end
+
+    subgraph egress["出口"]
+        gw["LLM ゲートウェイ<br/>認証情報プロキシ"]
+    end
+
+    gh["GitHub"]
+    llm["LLM API"]
+
+    user --> orch
+    orch -->|"作成"| claim
+    claim -->|"参照"| pool
+    pool -->|"参照"| tpl_i
+    ctl -->|"reconcile"| sb
+    ctl -->|"管理"| np
+    orch -->|"コマンド実行・diff 回収"| router --> sb
+    sb --> gw --> llm
+    gw -->|"clone 用(読み取りのみ)"| gh
+    orch --> pub -->|"agent/* に push・PR"| gh
+    adm -.->|"検証"| sb
+```
+
+### 9.3 タスクの流れ
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant O as Orchestrator
+    participant K as Kubernetes API
+    participant C as agent-sandbox<br/>controller
+    participant S as Sandbox Pod<br/>(sandboxd)
+    participant P as Publisher
+
+    O->>K: SandboxClaim 作成(role=implementer、期限つき)
+    K-->>C: 検知
+    C->>K: WarmPool から割り当て、または新規に Sandbox / Pod / NetworkPolicy
+    C-->>O: status.sandbox.name / Ready
+    O->>S: sandbox-router 経由で実行(clone・編集・テスト)
+    S-->>O: commit と差分
+    O->>O: 承認 ①(ユーザー)
+    O->>P: publish
+    P->>P: agent/* に push、PR 作成
+    O->>K: SandboxClaim 削除(または ttlSecondsAfterFinished で自動)
+    C->>K: Sandbox / Pod / PVC を片付け
+```
+
+### 9.4 これまでの案との対応
+
+| 本書の案 | Agent Sandbox での実現 | 備考 |
+|---|---|---|
+| `AgentRole`(役割テンプレート) | `SandboxTemplate` | `podTemplate` と `networkPolicy` で権限を宣言できる。**独自 CRD は不要** |
+| `AgentRun`(1 回の実行) | `SandboxClaim` | `lifecycle` で期限と完了後の TTL を持てる |
+| LLM に渡せる値を絞る(`params`) | `envVarsInjectionPolicy: Disallowed`(既定) | 既定では Claim から環境変数を渡せない。許可しても、渡せる範囲をテンプレート側で決められる |
+| 役割ごとの egress | テンプレートごとの `networkPolicy` | controller がテンプレートごとに 1 つの NetworkPolicy を作る |
+| Explorer / Implementer | テンプレートを 2 つ | Publisher は Sandbox にしない(固定コード側) |
+| 実行の期限・片付け | `shutdownTime`、`ttlSecondsAfterFinished` | 暴走・放置の防止に使える |
+| 中断・再開 | `operatingMode: Suspended` | Pod は消え、PVC は残る(メモリ上の状態は失われる) |
+
+### 9.5 何を作り、何を任せるか
+
+| Agent Sandbox に任せる | 自分で作る |
+|---|---|
+| Pod・Service・PVC のライフサイクル | Orchestrator(依頼の解釈・承認管理・タスクの状態) |
+| テンプレート化と、Claim からの払い出し | `SandboxTemplate` の中身(explorer / implementer の設計) |
+| テンプレートごとの NetworkPolicy | LLM ゲートウェイ兼、認証情報プロキシ |
+| 期限切れの片付け、Suspend | Publisher(push と PR) |
+| Sandbox 内の実行 API(sandboxd)と SDK | Admission Policy(テンプレート外の Pod を拒否) |
+| gVisor / Kata の切り替え口 | 承認 UI(genkan のチャット欄) |
+
+### 9.6 注意点
+
+- **Sandbox は常駐を前提にした「単一 Pod」で、Job ではない。** 「完了」を自分で判断して Claim を消す必要がある
+  (`ttlSecondsAfterFinished` が何をもって finished とするかは、要確認)。今の Agent Job は完了が自然に分かるので、
+  ここは書き方が変わる。
+- **タスクの渡し方に制約がある。** Claim に環境変数やボリュームを渡すと**コールドスタート**になり、
+  WarmPool の利点(すぐ使える)を失う。リポジトリが毎回違うなら、WarmPool は効きにくい。
+  実行は sandbox-router や SDK 経由で、起動後に渡すほうが自然。
+- **clone の認証。** Pod に Secret を入れない方針とぶつかる。認証情報プロキシが clone 用の読み取り専用トークンを
+  付ける形にすれば、init container にもトークンは要らない。
+- **gVisor の導入は別作業。** RuntimeClass を使うには、各ノード(ubuntu 26.04)に runsc などを入れる必要がある。
+  Cilium との組み合わせを含め、動作は未確認。入れずに通常のコンテナ(runc)のまま、
+  NetworkPolicy・非 root・SA トークンなしで始める選択もある。
+- **WarmPool は常に資源を使う。** ワーカーは今 3 台(うち 1 台は cordon 中)で、メモリも小さい。
+  `replicas: 0` か、使わない構成から始める。
+- **API が変わりうる。** `v1beta1` で、Substrate や AX など周辺の Google 発プロジェクトはまだ流動的。
+  Sandbox / Template / Claim だけに依存し、周辺には依存しない。
+- **状態の二重管理。** Control Plane の SQLite(意図・履歴)と、Claim(実状態)の持ち分は、
+  `architecture.md` §3 の方針(実状態は Kubernetes が正)に揃える。
+
+### 9.7 段階的な進め方
+
+1. **kind で試す**: `make deploy-kind`(`EXTENSIONS=true`)で動かし、手動で `SandboxTemplate` と `SandboxClaim` を作る。
+2. **Implementer 用テンプレートを 1 つ書く**: SA トークンなし、非 root、egress は LLM ゲートウェイのみ。
+3. **Control Plane から Claim を作る**: 今の Job 生成(`kube` パッケージ)の隣に、Claim 生成を追加する。
+4. **認証情報プロキシと Publisher を足す**: ここで初めて GitHub に繋ぐ。
+5. **Admission Policy で強制する**: テンプレート外の Pod を拒否する。
+6. **独自 CRD(`AgentRun` など)は、必要になってから**: 承認待ちなど、Claim に収まらない状態が増えたときに検討する。
+
+## 10. 未決事項
 
 1. 守る対象の優先順位(§6)は、これでよいか。プライベートリポジトリを扱うか。
 2. 承認 ① は、変更が小さいときは自動にするか。基準(変更行数、触るファイル)をどうするか。
-3. LLM ゲートウェイは自作するか、既存の OSS(LiteLLM など)を使うか。
+3. LLM ゲートウェイは自作するか、既存の OSS(LiteLLM など)を使うか。認証情報プロキシも兼ねるか。
 4. 出口の許可リストは、プロキシ(Squid など)か、Cilium の FQDN ポリシーか。Cilium は導入済みなので後者が軽い。
+   ただし `SandboxTemplate` の `networkPolicy` は標準の NetworkPolicy なので、FQDN で絞るには別途 CiliumNetworkPolicy が要る(要確認)。
 5. Implementer のテスト実行で、任意のコマンドを許す範囲をどこまでにするか。
 6. GitHub App の作成と、リポジトリごとの installation の管理方法。
+7. (§9)Agent Sandbox を採用するか。採用する場合、まず kind で §9.7 の 1〜2 を試してよいか。
+8. (§9)gVisor を入れるか、入れずに始めるか。ubuntu 26.04 + Cilium での動作確認が要る。
+9. (§9)タスクの渡し方: 環境変数(コールドスタート)か、起動後に sandboxd / router 経由か。後者の場合の認可の仕組み。
+10. (§9)`ttlSecondsAfterFinished` の「finished」の定義と、Control Plane が完了をどう伝えるか。
+11. (§9)WarmPool を使うか。使うなら `replicas` と、ワーカーの余力。
+
+## 11. 参考(2026-11-25 時点)
+
+- [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)(★約 4,700、v1.0.12)と、
+  その [`docs/api.md`](https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/HEAD/docs/api.md)
+- [kagent](https://kagent.dev/docs/kagent/latest/about/core-concepts/): `AgentTemplate` と `Harness` を分ける 1.0(アルファ)の設計
+- [Kelos](https://sanj.dev/post/kelos-kubernetes-autonomous-ai-agents/): issue 起点で PR まで進める CRD 群。
+  認証情報は Secret から注入する方式で、本書より緩い。まだ若い(★360)
+- [Scoped Credentials via Proxy(AgentPatterns.ai)](https://agentpatterns.ai/security/scoped-credentials-proxy/):
+  認証情報プロキシのパターン。書き込み権限のトークンは、プロキシ経由でも悪用されうるので、
+  ブランチ削除などを禁止する必要がある
+- [Running AI Agents on Kubernetes(Signadot)](https://www.signadot.com/blog/running-ai-agents-on-kubernetes/):
+  周辺プロジェクトの成熟度の比較。企業の本番採用の事例は、調べた範囲では確認できていない

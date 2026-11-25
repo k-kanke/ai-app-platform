@@ -354,6 +354,18 @@ Pod は再起動されない(`imagePullPolicy: Always` は、Pod が起動する
   ページが自動で再読み込みされ、版 2 の CSS(`index-C7No1bFA.css`)に切り替わった。
 - ⚠ 実機での反映(マージ → 再起動)は、次の節に記録する。
 
+**反映の手順と、止まっているところ**
+- コードは `ai-app-platform` の `main` に入り、CI が通った(新しい Control Plane のイメージができている)。**実機の Control Plane は、まだ古いまま**。
+- genkan の変更(状態表示と PWA の自動更新)は、**ブランチ保護のため `main` に push できず、PR #3 にした**
+  (`Changes must be made through a pull request`。リポジトリのオーナーにも効く。設計どおりの動作)。
+- **順序が重要**: 実機の画面(古い版)は、未知の状態名(`MERGED` など)で表示が壊れる作り。だから、
+  ① PR #3 をマージ → ② genkan の CI → ③ 一度だけ `kubectl -n genkan rollout restart deploy/genkan` → ④ そのあとで `kubernetes-platform` の設定
+  (`AAP_DEPLOY_TARGETS` と `genkan` の Role)を push して、反映の段階を有効にする。④ を先にすると、古い画面が壊れる。
+- ④ のあと、**すでにマージ済みの PR(#1、#2)のタスク**が `PUBLISHED` のまま残っているので、それがそのまま、本物の実機テストになる:
+  マージを検知 → マージコミットのイメージ(`sha-…`)がレジストリにあることを確認 → すでに新しいイメージで動いているので、**再起動せずに `DEPLOYED`**。
+  副作用なしに、PR の状態の取得、レジストリの参照、Pod の imageID の読み取り、Role の権限を、実機で一度に確かめられる。
+- そのあとで、新しいタスクを 1 つ流して、承認 → PR → マージ → 自動で再起動、まで通す(本物の通しテスト)。
+
 ## 2026-11-25 Phase 6: チャットから依頼(ルールベース)と、実機で見つけたバグ
 
 **やったこと**(`genkan`)

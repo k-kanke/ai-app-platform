@@ -290,6 +290,18 @@
 - `git add -A docs` で、**あなたの未コミットの変更**(`docs/slide-assets/terminal-d1-pending.html` の色分け 6 行)が、私のコミット `ecfee12` に
   混ざって push された。内容は無害だが、意図しない混入だった。履歴は書き換えていない。以降は、パスを明示して `git add` している。
 
+## 2026-11-25 実際の Gemini で初めて通した: API キーは通った。差分の作成でバグ
+
+- あなたが `llm-gateway-credentials` を作った後、実際のタスクを流した。✅ **ゲートウェイ経由で、本物のキーで、`gemini-3.8-flash` に
+  `streamGenerateContent` が通り**、エージェントは作業して `npm run build` まで実行した(ゲートウェイのログにタスクごとの呼び出しが並んだ)。
+  Control Plane のキーの扱い、トークン、モデルの許可、承認ポリシー、通信の許可が、実機で一通り働いたことになる。
+- ❌ その後の**差分の作成**で失敗した(`差分を作れませんでした`)。原因: `git add -A -- . ':(exclude)node_modules'` は、`node_modules` が
+  `.gitignore` に入っていると、「ignore されたパスを明示した」という警告を出して exit 1 になる。`npm ci` を実行するタスクは、必ず失敗する作りだった。
+  kind の通しテストが見逃したのは、スタブのエージェントが `npm` を実行せず、`node_modules` ができなかったため。
+- 修正: `git add -A`(`.gitignore` が `node_modules` を外す)→ 差分の側で `:(exclude)node_modules` を指定する(`.gitignore` がないリポジトリへの保険)。
+- 回帰テスト: `hack/check-task-entrypoint.sh`(`node_modules` あり、`.gitignore` の有無の 2 通り。スタブのエージェント、LLM なし)。
+  **旧い版では実機と同じ失敗が再現し、修正後は通る**ことを確認した。
+
 ## 2026-11-25 Phase 6: チャットから依頼(ルールベース)と、実機で見つけたバグ
 
 **やったこと**(`genkan`)

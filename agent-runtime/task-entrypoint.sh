@@ -46,8 +46,11 @@ echo "== agent=${AAP_AGENT} task=${AAP_TASK_ID} repo=${AAP_REPO}"
 # Build the patch. Hooks and external diff drivers are switched off: the repository content is the agent's.
 post_event "差分を作っています"
 G=(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.pager=cat)
-"${G[@]}" add -A -- . ':(exclude)node_modules' || die "差分を作れませんでした"
-"${G[@]}" diff --cached --binary --no-color --no-ext-diff --no-textconv > "$OUT_DIR/patch.diff" || die "差分を作れませんでした"
+# Not `git add -- . ':(exclude)node_modules'`: when node_modules is in .gitignore (the usual case) git warns about the explicitly
+# excluded ignored path and exits 1, so a task that ran `npm ci` could never produce its patch. .gitignore already keeps
+# node_modules out of `add -A`; the exclude on the diff covers a repository that does not ignore it.
+"${G[@]}" add -A || die "差分を作れませんでした"
+"${G[@]}" diff --cached --binary --no-color --no-ext-diff --no-textconv -- . ':(exclude)node_modules' > "$OUT_DIR/patch.diff" || die "差分を作れませんでした"
 
 size=$(wc -c < "$OUT_DIR/patch.diff")
 if [ "$size" -eq 0 ]; then

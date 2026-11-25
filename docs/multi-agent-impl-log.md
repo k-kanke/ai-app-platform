@@ -23,11 +23,11 @@
 | 5 | 承認ポリシー(Pod、Job) | ✅ 反映済み | 実機の dry-run、kind、実際のタスク |
 | 6 | チャットから依頼(ルールベース) | ✅ 反映済み | 実際のブラウザ(偽の Control Plane) |
 
-**今できること**: genkan のチャットか「タスク」画面から依頼 → エージェントが clone して作業を始める。**キーがないので、今は「API キーが設定されていません」と説明つきで失敗する**。
+**今できること**: genkan のチャットか「タスク」画面から依頼 → 本物の Gemini が作業 → 差分 → 承認待ち(**実機で確認済み**)。承認すると PR ができる(GitHub App の Secret は入っている。**App のインストールと `main` のブランチ保護は、あなたの確認待ち**)。
 
 **🖐 あなたの手作業(順番どおり。手順は [`multi-agent-manual-steps.md`](multi-agent-manual-steps.md))**
-1. ゲートウェイに API キーを入れる(ubuntu-26 で 1 コマンド)→ 依頼 → 差分ができ → 承認、まで動く。
-2. GitHub App を作る([`multi-agent-github-app.md`](multi-agent-github-app.md))→ 承認した差分が PR になり、チャットに「PR を開いてマージする」ボタンが出る。
+1. ~~ゲートウェイに API キーを入れる~~ → **済み**(Secret `llm-gateway-credentials`)。
+2. GitHub App: App の作成と Secret(`github-app`)は**済み**(Control Plane が読み込み済み)。残りは、App を `genkan` に**インストール**することと、`main` の**ブランチ保護**([`multi-agent-github-app.md`](multi-agent-github-app.md) の 2、3)。これで、承認した差分が PR になり、チャットに「PR を開いてマージする」ボタンが出る。
 
 **まだ確かめていないこと**
 - 実際の Gemini による実装(キーがないため)と、実際の GitHub への push / PR(App がないため)。
@@ -301,6 +301,13 @@
 - 修正: `git add -A`(`.gitignore` が `node_modules` を外す)→ 差分の側で `:(exclude)node_modules` を指定する(`.gitignore` がないリポジトリへの保険)。
 - 回帰テスト: `hack/check-task-entrypoint.sh`(`node_modules` あり、`.gitignore` の有無の 2 通り。スタブのエージェント、LLM なし)。
   **旧い版では実機と同じ失敗が再現し、修正後は通る**ことを確認した。
+
+**実機で通った(承認の手前まで)**: 修正後のイメージで、`k-kanke/genkan` に「README.md の末尾に HTML コメントを 1 行足して」と依頼 →
+**本物の Gemini(`gemini-3.8-flash`、ゲートウェイ経由)が、その 1 行だけを足し、差分は 377 バイト**(`README.md` の `+1 -0`、警告なし)→ `AWAITING_APPROVAL`。
+まだ承認していない(承認すると、GitHub に実際の PR ができるため、あなたが画面で見てから決める)。タスク ID `a86fc1e8d9eab706`、保持期間 24 時間。
+
+**確認の落とし穴**: push 直後に `gh run list -L 1` で CI の完了を待つと、**1 つ前の(完了済みの)実行**を見て、「成功」と誤判定した。
+そのため、修正前のイメージで実機を試し、「修正が効かない」ように見えた(実際は、CI がまだ実行中だった)。コミットを指定して待つようにした。
 
 ## 2026-11-25 Phase 6: チャットから依頼(ルールベース)と、実機で見つけたバグ
 

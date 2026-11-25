@@ -22,6 +22,7 @@
 | 4 | Publisher と GitHub 連携(PR 作成) | ✅ 反映済み・**実機で PR #1 まで通った** | 本物の git とローカルのベアリポジトリでテスト、実機で push と PR と、人によるマージ |
 | 5 | 承認ポリシー(Pod、Job) | ✅ 反映済み | 実機の dry-run、kind、実際のタスク |
 | 6 | チャットから依頼(ルールベース) | ✅ 反映済み | 実際のブラウザ(偽の Control Plane) |
+| 7 | マージ後の反映(CI の完了を待って、再起動) | ✅ 反映済み | Go のテスト、実機でマージ済みの PR 2 件(再起動なしの `DEPLOYED`)。**本物の再起動は、通しテスト待ち** |
 
 **今できること**: genkan のチャットか「タスク」画面から依頼 → 本物の Gemini が作業 → 差分 → 承認待ち(**実機で確認済み**)。承認すると PR ができる(GitHub App の Secret は入っている。**App のインストールと `main` のブランチ保護は、あなたの確認待ち**)。
 
@@ -365,6 +366,18 @@ Pod は再起動されない(`imagePullPolicy: Always` は、Pod が起動する
   マージを検知 → マージコミットのイメージ(`sha-…`)がレジストリにあることを確認 → すでに新しいイメージで動いているので、**再起動せずに `DEPLOYED`**。
   副作用なしに、PR の状態の取得、レジストリの参照、Pod の imageID の読み取り、Role の権限を、実機で一度に確かめられる。
 - そのあとで、新しいタスクを 1 つ流して、承認 → PR → マージ → 自動で再起動、まで通す(本物の通しテスト)。
+
+**実機に反映した(マージ後の反映)**
+- 手順どおり: PR #3 のマージ → genkan の CI → 一度だけ手動で再起動(新しい画面)→ `kubernetes-platform` の設定を push。Control Plane が
+  `deploy step enabled`(`targets: 1`)で起動した。
+- ✅ **権限は、意図どおりで、それ以上ではない**(`kubectl auth can-i`): `genkan` の Pod の参照、Deployment `genkan` の参照と patch は可。
+  Deployment 一般の patch、`genkan` の Deployment の削除、`genkan` の Secret の参照、`apps` や `platform-system` の Deployment の patch は、すべて不可。
+- ✅ **マージ済みの PR #1、#2 のタスクが、実機でそのまま「テスト」になった**: `PUBLISHED` → `MERGED`(実際のマージコミット `0395e71`、`ef96977` を記録)→
+  マージコミットのイメージ(`sha-…`)がレジストリにあることを確認 → すでに新しいイメージで動いているので、**再起動なしで `DEPLOYED`**。
+  PR の状態の取得、レジストリの参照、Pod の imageID の読み取り、Role が、実機で通った。Control Plane は何も再起動していない(Deployment の
+  `restartedAt` は、私が手動で再起動した時刻のまま)。
+- 本物の通しテスト用に、新しいタスク `6e43135c96b1c35a`(ArgoCD のタイルの url を `http://argocd.home` にする、1 行の変更)を、承認待ちで止めてある。
+  承認 → PR → マージ → 自動で再起動 → 反映済み、を、あなたの操作で通す。
 
 ## 2026-11-25 Phase 6: チャットから依頼(ルールベース)と、実機で見つけたバグ
 

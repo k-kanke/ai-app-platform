@@ -182,3 +182,37 @@
 - `set -o pipefail` の下で `kubectl … | grep -q` は、`grep` が早く終了すると SIGPIPE でパイプ全体が失敗扱いになる。出力を変数に取ってから判定するようにした。
 - PVC の削除は非同期(PVC 保護のファイナライザが外れるまで `Terminating`)。「存在しない、または削除中」を解放済みとみなす。
 
+## 2026-11-25 Phase 3: LLM ゲートウェイと、出口の許可リスト(コードとテスト。キーは手作業待ち)
+
+**やったこと**
+- `internal/llmgateway` と `cmd/llm-gateway`: API キーを持つ**唯一の場所**。Implementer は、キーの代わりに**タスク専用の短命なトークン**
+  (`<task>.<期限>.<hmac>`)を送る。ゲートウェイはトークンを検証し、許可した呼び出しだけ(`generateContent` / `streamGenerateContent` /
+  `countTokens` / `embedContent` / `batchEmbedContents`、`gemini-*` のモデルだけ、POST だけ)を通し、**タスクごと(400)と 1 日(3000)の
+  リクエスト上限**を守り、本物のキーに差し替えて転送する。Implementer が付けた `key=` クエリや `Authorization` は捨てる。ストリーミングはそのまま通す。
+- Gemini CLI が、`GOOGLE_GEMINI_BASE_URL` で向き先を変えられると確認した(実機と同じ 0.62.0 のソースを読んだ。「gateway」という認証方式があり、
+  `GEMINI_API_KEY` を `x-goog-api-key` で送る)。Control Plane は Job に、この 2 つの環境変数を渡す。**共有の Secret(`agent-credentials`)は、もう渡さない**。
+- 実機の manifest(`kubernetes-platform`): ゲートウェイの Deployment と Service、呼べるのは `aap-agents` の Implementer だけという NetworkPolicy、
+  **Cilium の FQDN 許可リスト**(`CiliumNetworkPolicy`): Implementer は Control Plane、ゲートウェイ、`github.com`、npm / Go / PyPI の
+  レジストリだけ。Publisher は `github.com` と `api.github.com` だけ。ゲートウェイは `generativelanguage.googleapis.com` だけ。
+  Cilium は許可を足し合わせるので、「LAN 以外の HTTPS はどこでも」という旧い NetworkPolicy は**削除**した(`default-deny` は残す)。
+- 承認ポリシーを最終形に引き締めた: `aap-agents` の Pod は、**Secret を一切参照できない**(`envFrom` もだめ)。
+- 失敗の説明: ゲートウェイにキーがないとき、リクエスト上限を使い切ったとき。
+
+**判断**
+- ゲートウェイは 1 レプリカ(上限をメモリで数えるため)。再起動で、1 日の数え直しが起きる。個人の基盤では許容した。
+- モデルは `gemini-*` だけを許可し、モデルごとの許可リストにはしなかった。CLI は内部で複数のモデルを使うので、厳しくすると壊れやすい。
+  費用はリクエスト数の上限で抑える。
+- kind には Cilium がないので、通しテストでは `CiliumNetworkPolicy` を除き、ゲートウェイは止める(本物のキーがないため)。
+
+**確認(ここまで)**
+- ✅ `go test -race ./...` がすべて通る。ゲートウェイのテスト: 本物のキーへの差し替え、偽装した `key=` の除去、不正なトークン(なし、署名違い、期限切れ、
+  別タスクへの書き換え、本物のキーそのもの)の拒否、許可外の呼び出しとモデルの拒否、タスクごと・日ごとの上限、日付が変わると戻る、
+  本体サイズの上限、キー未設定の 503、ストリーミング。Control Plane 側: Implementer のキーが自分のタスクの有効なトークンで、期限が切れ、
+  他のタスクには使えず、共有 Secret は mount されない。
+- ✅ kind の通しテストが、引き締めた承認ポリシーの下でも通る。
+- ⚠ 実機への反映と、FQDN ポリシーの動作は、この後の節に記録する。
+
+**🖐 あなたの手作業が必要(未実施)**
+- ゲートウェイに API キーを入れる。手順は [`multi-agent-manual-steps.md`](multi-agent-manual-steps.md) の 1。
+  (以前の記録にあった `aap-agents` への Secret のコピーは、**不要になった**。)
+

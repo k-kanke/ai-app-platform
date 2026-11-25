@@ -55,6 +55,10 @@ func Tail(s string, n, max int) string {
 // taskRules are checked before the shared ones for repository tasks, whose reader is the owner
 // (not a family member) and whose failures include cloning and the repository's own tests.
 var taskRules = []rule{
+	{regexp.MustCompile(`(?i)no provider key configured|gateway has no provider key`),
+		"LLM ゲートウェイに API キーが設定されていません。管理者が Secret(llm-gateway-credentials)を作る必要があります。"},
+	{regexp.MustCompile(`(?i)request budget exhausted`),
+		"このタスクの LLM の利用回数の上限に達しました。依頼を小さく分けて、もう一度お試しください。"},
 	{regexp.MustCompile(`(?i)repository .*not found|could not read from remote|unable to access|fatal: .*clone|Authentication failed|Could not resolve host`),
 		"リポジトリを取得できませんでした。名前が違うか、非公開の可能性があります。"},
 	{regexp.MustCompile(`(?i)# fail [1-9]|not ok \d+|npm ERR! .*test|Tests?:\s+\d+ failed|FAIL\s`),

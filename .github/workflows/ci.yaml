@@ -27,6 +27,7 @@ jobs:
         include:
           - { name: control-plane, context: control-plane }
           - { name: publisher, context: control-plane, file: control-plane/Dockerfile.publisher }
+          - { name: llm-gateway, context: control-plane, file: control-plane/Dockerfile.llm-gateway }
           - { name: agent-runtime, context: agent-runtime, build_args: "INSTALL_GEMINI=true" }
           - { name: app-runtime, context: app-runtime }
           - { name: portal, context: portal }

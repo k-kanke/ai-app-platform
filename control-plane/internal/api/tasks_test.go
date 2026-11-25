@@ -32,6 +32,7 @@ import (
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/events"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/llmgateway"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/orchestrator"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
 )
@@ -57,6 +58,7 @@ type topt struct {
 	maxActive int
 	disabled  bool
 	gh        bool // configure a (fake) GitHub App so approved tasks are published
+	gateway   bool // Implementers get an LLM gateway token instead of the shared key Secret
 	st        *store.Store
 	cs        *fake.Clientset
 }
@@ -74,13 +76,16 @@ func newTenv(t *testing.T, o topt) *tenv {
 	}
 	cfg := config.Config{Namespace: ns, TasksNamespace: tns, TasksEnabled: !o.disabled, Agent: "gemini", AgentImage: "agent",
 		TaskWorkspaceSize: "2Gi", AgentTimeout: time.Minute, InternalURL: "http://cp", TaskRetention: time.Hour,
-		TaskMaxPatchBytes: 2000, StorageClass: "local-path", TaskGitBase: "https://git.example.test"}
+		TaskMaxPatchBytes: 2000, StorageClass: "local-path", TaskGitBase: "https://git.example.test", AgentSecretName: "agent-credentials"}
+	if o.gateway {
+		cfg.LLMGatewayURL = "http://llm-gateway.platform-system.svc:8080/"
+	}
 	e := &tenv{t: t, cs: o.cs, st: o.st}
 	kc := kube.New(o.cs, cfg)
 	kc.LogReader = func(ctx context.Context, pod string, tail int64) (string, error) { return e.logs, nil }
 	broker := events.NewBroker()
 	opts := orchestrator.Options{TokenSecret: "s3cret", PollInterval: 5 * time.Millisecond,
-		AgentTimeout: time.Second, TaskRetention: o.retention}
+		AgentTimeout: time.Second, TaskRetention: o.retention, LLMGateway: o.gateway}
 	if o.gh {
 		key, _ := rsa.GenerateKey(rand.Reader, 2048)
 		e.ghSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -655,5 +660,43 @@ func TestQuotaExhaustionIsExplained(t *testing.T) {
 	got := e.waitState(task["id"].(string), store.TaskFailed)
 	if !strings.Contains(got["userMessage"].(string), "上限に達しています") {
 		t.Errorf("message: %v", got["userMessage"])
+	}
+}
+
+// ---- Phase 3: the LLM gateway ----
+
+func TestImplementerGetsATaskTokenNotTheKey(t *testing.T) {
+	e := newTenv(t, topt{gateway: true})
+	_, task := e.create("k-kanke/genkan", "x")
+	id := task["id"].(string)
+	j := e.job(id)
+	c := j.Spec.Template.Spec.Containers[0]
+	env := envOf(j)
+	if env["GOOGLE_GEMINI_BASE_URL"] != "http://llm-gateway.platform-system.svc:8080" {
+		t.Errorf("base url: %q", env["GOOGLE_GEMINI_BASE_URL"])
+	}
+	got, err := llmgateway.Verify("s3cret", env["GEMINI_API_KEY"], time.Now())
+	if err != nil || got != id {
+		t.Fatalf("the Implementer's key must be a valid token for its own task: %v %q", err, got)
+	}
+	if len(c.EnvFrom) != 0 {
+		t.Errorf("with a gateway the shared key Secret must not be mounted: %+v", c.EnvFrom)
+	}
+	// The token stops working when the Job's time is over.
+	if _, err := llmgateway.Verify("s3cret", env["GEMINI_API_KEY"], time.Now().Add(time.Hour)); err == nil {
+		t.Error("the task token must expire")
+	}
+	// It cannot be used as another task's token.
+	if _, err := llmgateway.Verify("s3cret", strings.Replace(env["GEMINI_API_KEY"], id, "ffff", 1), time.Now()); err == nil {
+		t.Error("a token must not work for another task")
+	}
+}
+
+func TestWithoutAGatewayTheSharedSecretIsUsed(t *testing.T) {
+	e := newTenv(t, topt{})
+	_, task := e.create("k-kanke/genkan", "x")
+	c := e.job(task["id"].(string)).Spec.Template.Spec.Containers[0]
+	if len(c.EnvFrom) != 1 || c.EnvFrom[0].SecretRef.Name != "agent-credentials" {
+		t.Errorf("interim path: %+v", c.EnvFrom)
 	}
 }

@@ -34,14 +34,17 @@ kind load docker-image --name aap-dev aap-control-plane:dev aap-agent-runtime:de
 
 say "deploy platform manifests from kubernetes-platform (includes aap-agents)"
 kubectl kustomize "$KP/manifests/ai-app-platform" \
+ | python3 -c 'import sys; d=sys.stdin.read().split("\n---\n"); print("\n---\n".join(x for x in d if "kind: CiliumNetworkPolicy" not in x))' \
  | sed -e 's#local-path#standard#g' \
        -e 's#ghcr.io/k-kanke/ai-app-platform/control-plane:latest#aap-control-plane:dev#' \
        -e 's#ghcr.io/k-kanke/ai-app-platform/agent-runtime:latest#aap-agent-runtime:dev#' \
        -e 's#ghcr.io/k-kanke/ai-app-platform/app-runtime:latest#aap-app-runtime:dev#' \
        -e 's#ghcr.io/k-kanke/ai-app-platform/portal:latest#aap-portal:dev#' \
  | $K apply -f - >/dev/null
+# kind has no Cilium (the FQDN policies are dropped above) and no real provider key: the gateway is not part of this test
 $K -n platform-system create secret generic control-plane-secrets --from-literal=token-secret=e2e-secret --dry-run=client -o yaml | $K apply -f - >/dev/null
 $K -n platform-system set env deploy/control-plane AAP_AGENT=template AAP_TASKS_ENABLED=true AAP_TASK_RETENTION_HOURS=24 >/dev/null
+$K -n platform-system scale deploy/llm-gateway --replicas=0 >/dev/null 2>&1 || true
 $K -n platform-system rollout restart deploy/control-plane >/dev/null
 $K -n platform-system rollout status deploy/control-plane --timeout=120s
 

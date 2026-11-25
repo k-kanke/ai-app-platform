@@ -10,6 +10,7 @@ import (
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/diagnose"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/llmgateway"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/patch"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/trace"
@@ -92,6 +93,10 @@ func (o *Orchestrator) runImplementer(ctx context.Context, t store.Task) error {
 	o.taskStep(ctx, t.ID, "implementer")
 	o.EmitTask(ctx, t.ID, store.TaskRunning, "リポジトリを取得して、作業を始めます")
 	spec := kube.TaskSpec{ID: t.ID, Repo: t.Repo, Prompt: t.Prompt, Token: TaskToken(o.opt.TokenSecret, t.ID)}
+	if o.opt.LLMGateway {
+		// Valid for as long as the Job may run (plus the clone and a margin), then useless.
+		spec.LLMToken = llmgateway.Token(o.opt.TokenSecret, t.ID, time.Now().Add(o.opt.AgentTimeout+10*time.Minute))
+	}
 	if err := retry(ctx, func() error { return o.kube.EnsureImplementerJob(ctx, spec) }); err != nil {
 		return o.failTask(ctx, t, "implementer", "作業を始められませんでした。少し待ってから、もう一度お試しください。", err)
 	}

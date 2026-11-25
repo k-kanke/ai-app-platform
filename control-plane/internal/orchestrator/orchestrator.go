@@ -36,6 +36,8 @@ type Options struct {
 	// GitHub is the GitHub App used to publish approved tasks as pull requests. nil = publishing is off
 	// and an approved task stays APPROVED.
 	GitHub *github.App
+	// LLMGateway: Implementers get a task token for the LLM gateway (see config.LLMGatewayURL).
+	LLMGateway bool
 }
 
 type Orchestrator struct {

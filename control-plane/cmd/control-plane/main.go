@@ -78,7 +78,7 @@ func run(log *slog.Logger) error {
 	}
 	orch := orchestrator.New(st, k, broker, orchestrator.Options{
 		TokenSecret: cfg.TokenSecret, AgentTimeout: cfg.AgentTimeout + time.Minute, RuntimeTimeout: cfg.RuntimeTimeout, PollInterval: cfg.PollInterval,
-		TaskRetention: cfg.TaskRetention, GitHub: gh,
+		TaskRetention: cfg.TaskRetention, GitHub: gh, LLMGateway: cfg.TasksEnabled && cfg.LLMGatewayURL != "",
 	}, log)
 	var repoRe *regexp.Regexp
 	if cfg.TasksEnabled {

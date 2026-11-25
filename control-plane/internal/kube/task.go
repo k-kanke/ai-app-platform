@@ -65,6 +65,9 @@ func (c *Client) EnsureTaskWorkspace(ctx context.Context, id string) error {
 // TaskSpec describes one Implementer run.
 type TaskSpec struct {
 	ID, Repo, Prompt, Token string
+	// LLMToken is the task's short-lived credential for the LLM gateway. It is used (with cfg.LLMGatewayURL) in place
+	// of the shared API key Secret; empty means the gateway is not used.
+	LLMToken string
 }
 
 // cloneScript runs in the init container, where the Implementer's network policy still applies but
@@ -137,7 +140,14 @@ func (c *Client) EnsureImplementerJob(ctx context.Context, t TaskSpec) error {
 	if c.cfg.GeminiModel != "" {
 		ctr.Env = append(ctr.Env, corev1.EnvVar{Name: "AAP_GEMINI_MODEL", Value: c.cfg.GeminiModel})
 	}
-	if c.cfg.AgentSecretName != "" {
+	switch {
+	case c.cfg.LLMGatewayURL != "" && t.LLMToken != "":
+		// Through the gateway: the pod holds only a task token that expires with the task, never the provider key.
+		ctr.Env = append(ctr.Env,
+			corev1.EnvVar{Name: "GOOGLE_GEMINI_BASE_URL", Value: strings.TrimRight(c.cfg.LLMGatewayURL, "/")},
+			corev1.EnvVar{Name: "GEMINI_API_KEY", Value: t.LLMToken})
+	case c.cfg.AgentSecretName != "":
+		// Interim: the shared Secret (removed once the gateway is configured everywhere).
 		ctr.EnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
 			LocalObjectReference: corev1.LocalObjectReference{Name: c.cfg.AgentSecretName}, Optional: boolp(true)}}}
 	}

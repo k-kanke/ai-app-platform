@@ -55,6 +55,10 @@ type Config struct {
 	GitHubAppID      string
 	GitHubAppKeyFile string // PEM private key of the GitHub App (a mounted Secret; never in Git)
 	GitHubAPIBase    string // empty = https://api.github.com (tests)
+
+	// LLM gateway (docs/multi-agent-permissions.md §3). When set, Implementers get a short-lived task token and this
+	// base URL instead of the shared API key Secret.
+	LLMGatewayURL string
 }
 
 func Load() (Config, error) {
@@ -88,6 +92,7 @@ func Load() (Config, error) {
 		GitHubAppID:        os.Getenv("AAP_GITHUB_APP_ID"),
 		GitHubAppKeyFile:   os.Getenv("AAP_GITHUB_APP_KEY_FILE"),
 		GitHubAPIBase:      os.Getenv("AAP_GITHUB_API_BASE"),
+		LLMGatewayURL:      os.Getenv("AAP_LLM_GATEWAY_URL"),
 	}
 	hours, err := strconv.Atoi(env("AAP_TASK_RETENTION_HOURS", "24"))
 	if err != nil || hours <= 0 {

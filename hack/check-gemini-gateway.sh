@@ -6,14 +6,16 @@
 # With the real gateway binary between the CLI and the fake LLM (checks the proxy against the CLI's real traffic: SSE,
 # query strings, and that the task token is swapped for the provider key):
 #   WITH_GATEWAY=1 IMAGE=aap-agent-runtime:gemini hack/check-gemini-gateway.sh
+# FAIL_LLM=1 makes the fake LLM answer 503 to every call and expects the Implementer to FAIL (not to report "no changes").
 # Found the hard way: without security.auth.selectedType the CLI stops with "Invalid auth method selected."
+# Found the hard way: when the 5xx watcher killed the CLI, the CLI exited 0 and the task was reported as "no changes".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 IMAGE=${IMAGE:-aap-agent-runtime:gemini}
 LOG=$(mktemp); PORT=18099; GWPORT=18097; REALKEY=REAL-PROVIDER-KEY; SECRET=check-secret
 BASEURL=http://host.docker.internal:$PORT; KEY=abc123.9999999999.sig
 python3 - "$PORT" "$LOG" <<'PY' &
-import http.server, json, sys
+import http.server, json, os, sys
 port, log = int(sys.argv[1]), sys.argv[2]
 class H(http.server.BaseHTTPRequestHandler):
     def note(self, s):
@@ -21,6 +23,9 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("content-length") or 0); self.rfile.read(n)
         self.note("POST %s key=%s" % (self.path, self.headers.get("x-goog-api-key")))
+        if os.environ.get("FAIL_LLM") and self.path.startswith("/v1"):
+            out = b'{"error":{"message":"the gateway has no provider key configured","code":503,"status":"Service Unavailable"}}'
+            self.send_response(503); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(out))); self.end_headers(); self.wfile.write(out); return
         body = json.dumps({"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP","index":0}],
                            "usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}})
         if self.path.startswith("/internal/"):
@@ -48,8 +53,15 @@ out=$(docker run --rm --user 1000:1000 --entrypoint bash \
   -e AAP_AGENT=gemini -e AAP_TASK_ID=abc123 -e AAP_REPO=k-kanke/x -e AAP_PROMPT="say hi" \
   -e AAP_CONTROL_PLANE_URL=http://host.docker.internal:$PORT -e AAP_PROGRESS_TOKEN=progress \
   -e GOOGLE_GEMINI_BASE_URL=$BASEURL -e GEMINI_API_KEY=$KEY \
-  -e GEMINI_CLI_TRUST_WORKSPACE=true -e HOME=/tmp/home \
-  "$IMAGE" -c 'mkdir -p /workspace/repo && cd /workspace/repo && git init -q && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && echo hi > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -q -m a && /opt/aap/task-entrypoint.sh' 2>&1) || { echo "$out" | tail -15; echo FAIL: the Implementer entrypoint failed; exit 1; }
+  -e GEMINI_CLI_TRUST_WORKSPACE=true -e HOME=/tmp/home -e AAP_AGENT_MAX_5XX=2 \
+  "$IMAGE" -c 'mkdir -p /workspace/repo && cd /workspace/repo && git init -q && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && echo hi > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -q -m a && /opt/aap/task-entrypoint.sh' 2>&1) && rc=0 || rc=$?
+if [ -n "${FAIL_LLM:-}" ]; then
+  [ "$rc" -ne 0 ] || { echo "$out" | tail -8; echo "FAIL: the LLM kept failing but the Implementer reported success"; exit 1; }
+  grep -q "no changes" <<<"$out" && { echo "FAIL: a failed agent was reported as no changes"; exit 1; }
+  echo "  ok a failing LLM fails the Implementer (exit $rc) instead of being reported as 'no changes'"
+  exit 0
+fi
+[ "$rc" -eq 0 ] || { echo "$out" | tail -15; echo FAIL: the Implementer entrypoint failed; exit 1; }
 echo "$out" | tail -3
 grep -q "Invalid auth method" <<<"$out" && { echo "FAIL: the CLI rejected the auth method"; exit 1; }
 if [ -n "${WITH_GATEWAY:-}" ]; then

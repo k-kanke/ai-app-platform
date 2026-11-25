@@ -196,3 +196,15 @@ func (c *Client) DeleteTask(ctx context.Context, id string) error {
 	}
 	return ignore(c.cs.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, TaskWorkspacePVC(id), do))
 }
+
+// DeleteTaskWorkspace removes only the workspace PVC (Jobs and their logs stay). Once the Implementer has
+// succeeded, its patch lives in the Control Plane and nothing reads the workspace again, so keeping it
+// would only use up the namespace's PVC quota.
+func (c *Client) DeleteTaskWorkspace(ctx context.Context, id string) error {
+	fg := metav1.DeletePropagationBackground
+	err := c.cs.CoreV1().PersistentVolumeClaims(c.cfg.TasksNamespace).Delete(ctx, TaskWorkspacePVC(id), metav1.DeleteOptions{PropagationPolicy: &fg})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}

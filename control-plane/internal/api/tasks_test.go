@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,8 +20,12 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/api"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/config"
@@ -249,6 +254,10 @@ func TestTaskHappyPathToApproval(t *testing.T) {
 	}
 	e.finish(id, true)
 	got := e.waitState(id, store.TaskAwaitingApproval)
+	// Nothing reads the workspace again, so it is released at once (the patch is in the Control Plane).
+	if _, err := e.cs.CoreV1().PersistentVolumeClaims(tns).Get(context.Background(), claim, metav1.GetOptions{}); err == nil {
+		t.Error("the workspace must be released once the Implementer succeeded")
+	}
 	sum := got["summary"].(map[string]any)
 	if sum["added"].(float64) != 1 || len(sum["files"].([]any)) != 1 {
 		t.Errorf("summary = %v", sum)
@@ -293,6 +302,10 @@ func TestTaskFailureIsExplained(t *testing.T) {
 	got := e.waitState(id, store.TaskFailed)
 	if !strings.Contains(got["userMessage"].(string), "リポジトリを取得できません") || got["detail"] == "" {
 		t.Errorf("failure fields: %v", got)
+	}
+	// A failed task keeps its workspace (until retention) so it can be looked at.
+	if _, err := e.cs.CoreV1().PersistentVolumeClaims(tns).Get(context.Background(), kube.TaskWorkspacePVC(id), metav1.GetOptions{}); err != nil {
+		t.Errorf("a failed task must keep its workspace for debugging: %v", err)
 	}
 	if code, _ := e.req("POST", "/api/v1/tasks/"+id+"/approve", map[string]string{"patchSha256": "x"}, nil); code != 409 {
 		t.Errorf("approve a failed task = %d", code)
@@ -619,4 +632,28 @@ func TestPublishingResumesAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.pubJob("abc123")
+}
+
+func TestNoChangesReleasesTheWorkspace(t *testing.T) {
+	e := newTenv(t, topt{})
+	_, task := e.create("k-kanke/genkan", "x")
+	id := task["id"].(string)
+	e.finish(id, true)
+	e.waitState(id, store.TaskNoChanges)
+	if _, err := e.cs.CoreV1().PersistentVolumeClaims(tns).Get(context.Background(), kube.TaskWorkspacePVC(id), metav1.GetOptions{}); err == nil {
+		t.Error("the workspace must be released")
+	}
+}
+
+func TestQuotaExhaustionIsExplained(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	cs.PrependReactor("create", "persistentvolumeclaims", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "persistentvolumeclaims"}, "x", errors.New("exceeded quota: aap-agents, requested: persistentvolumeclaims=1"))
+	})
+	e := newTenv(t, topt{cs: cs})
+	_, task := e.create("k-kanke/genkan", "x")
+	got := e.waitState(task["id"].(string), store.TaskFailed)
+	if !strings.Contains(got["userMessage"].(string), "上限に達しています") {
+		t.Errorf("message: %v", got["userMessage"])
+	}
 }

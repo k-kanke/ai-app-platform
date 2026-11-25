@@ -45,6 +45,8 @@ $K -n platform-system set env deploy/control-plane AAP_AGENT=template AAP_TASKS_
 $K -n platform-system rollout restart deploy/control-plane >/dev/null
 $K -n platform-system rollout status deploy/control-plane --timeout=120s
 
+# a dev cluster accumulates tasks between runs; start from an empty namespace so the quota is not the subject of this test
+$K -n aap-agents delete job,pvc --all --wait=false >/dev/null 2>&1 || true
 pkill -f "port-forward.*18082" 2>/dev/null || true
 $K -n platform-system port-forward svc/control-plane 18082:8080 >/tmp/aap-tasks-pf.log 2>&1 &
 PF=$!
@@ -102,7 +104,25 @@ r=$(wait_state "$T3" FAILED 240) || [ "$r" = "FAILED" ] || fail "failing task: $
 msg=$(curl -fs $API/api/v1/tasks/$T3 | jq_ 'd.get("userMessage","")')
 [ -n "$msg" ] && ok "failure is explained: $msg" || fail "failure has no message"
 
-say "5. the workspace outlives the task until retention (24h)"
-$K -n aap-agents get pvc -o name | grep -q "aap-task-$T2-ws" && ok "finished task keeps its workspace for now" || fail "workspace was removed early"
+say "5. the workspace is released on success and kept on failure"
+# Deleting a PVC is asynchronous (it stays Terminating until the pvc-protection finalizer goes): gone or Terminating = released.
+released() { local o; o=$($K -n aap-agents get pvc "aap-task-$1-ws" -o jsonpath='{.metadata.deletionTimestamp}' 2>&1) || return 0; [ -n "$o" ]; }
+for i in $(seq 20); do released "$T1" && released "$T2" && break; sleep 1; done
+released "$T2" && ok "a task that changed nothing released its workspace (the patch is in the Control Plane)" || fail "a finished task still holds its workspace"
+released "$T1" && ok "a task awaiting approval / approved released it too" || fail "an approved task still holds its workspace"
+released "$T3" && fail "the failed task lost its workspace" || ok "a failed task keeps its workspace for debugging (until retention)"
+
+say "6. admission policies hold (server-side dry-run)"
+if $K get validatingadmissionpolicy aap-agents-pods >/dev/null 2>&1; then
+  pod() { printf '{"apiVersion":"v1","kind":"Pod","metadata":{"name":"t","namespace":"aap-agents","labels":{"aap.dev/role":"implementer"}},"spec":{"automountServiceAccountToken":false,"restartPolicy":"Never","securityContext":{"seccompProfile":{"type":"RuntimeDefault"}},%s"containers":[{"name":"c","image":"busybox","resources":{"limits":{"cpu":"100m","memory":"64Mi"}},"securityContext":{"runAsNonRoot":true,"runAsUser":1000,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' "$1"; }
+  pod '' | $K create --dry-run=server -f - >/dev/null 2>&1 && ok "a conforming pod is admitted" || fail "a conforming pod was refused"
+  # capture first: with pipefail, `grep -q` ending the pipe early would make the whole pipeline look failed
+  out=$(pod '"volumes":[{"name":"s","secret":{"secretName":"x"}}],' | $K create --dry-run=server -f - 2>&1 || true)
+  echo "$out" | grep -q "denied request" && ok "a Secret volume is refused" || fail "Secret volume admitted: $out"
+  out=$(pod '"hostNetwork":true,' | $K create --dry-run=server -f - 2>&1 || true)
+  echo "$out" | grep -qiE "denied|forbidden" && ok "hostNetwork is refused" || fail "hostNetwork admitted: $out"
+else
+  echo "  (skipped: this kind cluster has no ValidatingAdmissionPolicy)"
+fi
 
 say "all task scenarios passed"

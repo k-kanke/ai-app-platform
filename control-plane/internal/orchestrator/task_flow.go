@@ -106,6 +106,10 @@ func (o *Orchestrator) runImplementer(ctx context.Context, t store.Task) error {
 			fmt.Errorf("implementer failed: %s", reason))
 	}
 
+	// The Implementer succeeded: its result is the patch (stored in the Control Plane), so the workspace is no
+	// longer needed. A failed task keeps its workspace until retention, for debugging.
+	o.releaseWorkspace(ctx, t.ID)
+
 	data, _, err := o.st.GetTaskPatch(ctx, t.ID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && len(data) == 0) {
 		_ = o.st.SetTaskState(ctx, t.ID, store.TaskNoChanges, "done")
@@ -126,7 +130,16 @@ func (o *Orchestrator) runImplementer(ctx context.Context, t store.Task) error {
 	return nil
 }
 
+func (o *Orchestrator) releaseWorkspace(ctx context.Context, id string) {
+	if err := o.kube.DeleteTaskWorkspace(ctx, id); err != nil {
+		o.log.Error("release task workspace", "task", id, "err", err) // retention removes it later
+	}
+}
+
 func (o *Orchestrator) failTask(ctx context.Context, t store.Task, step, userMsg string, cause error) error {
+	if strings.Contains(cause.Error(), "exceeded quota") {
+		userMsg = "同時に持てる作業場の上限に達しています。古いタスクが片付くまで待つか、管理者に連絡してください。"
+	}
 	return o.failTaskWith(ctx, t, step, userMsg, "", cause)
 }
 

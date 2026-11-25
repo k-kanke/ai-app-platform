@@ -151,3 +151,34 @@
 - GitHub App の作成、リポジトリへのインストール、`main` のブランチ保護、Secret の作成。手順は
   [`multi-agent-github-app.md`](multi-agent-github-app.md)。
 
+## 2026-11-25 Phase 5: Admission Policy(実機に反映済み)と、作業場クォータの修正
+
+**やったこと**(`kubernetes-platform`、`master`)
+- `aap-agents-admission.yaml`: ValidatingAdmissionPolicy 2 つ。
+  - Pod: 役割ラベル(`implementer` / `publisher`)が必須、SA トークンなし、volume は PVC と emptyDir だけ(Secret・ConfigMap・hostPath・projected は不可)、
+    host の namespace なし、`secretKeyRef` 禁止、Secret の参照は `agent-credentials` の `envFrom` を **implementer だけ**に許可(Phase 3 でなくす暫定措置)、
+    cpu と memory の limits が必須。
+  - Job: `activeDeadlineSeconds` が 1〜3600 秒、`backoffLimit: 0`。
+- Publisher の egress(`publisher-egress`)、Control Plane の ingress に publisher を追加、GitHub App の Secret(`github-app`、省略可)の mount、
+  Control Plane に `AAP_PUBLISHER_IMAGE`。Secret がなければ「GitHub App 未設定」で起動し、承認したタスクは `APPROVED` で止まる。
+
+**確認(実機)**
+- ✅ CI がすべて成功(`publisher` のイメージを含む)。Control Plane は新しいイメージで起動した。
+- ✅ サーバー側 dry-run で、適合する Pod は通り、役割ラベルなし・未知の役割・SA トークンあり・Secret の volume・`secretKeyRef`・
+  別の Secret の `envFrom`・publisher からの `agent-credentials`・`hostNetwork` は拒否された。implementer からの `agent-credentials` は通った。
+- ✅ 実際のタスクを流すと、Control Plane が作る Job は、ポリシーを通ってエージェントの段階まで進んだ(Gemini の Secret が無いので、そこで失敗するのは想定どおり)。
+- ✅ kind でも、通しテストにポリシーの検査を足して通った(適合する Pod は通る、Secret の volume は拒否、hostNetwork は拒否)。
+- ⚠ 「リソース上限なし」の Pod は通る。LimitRange が先にデフォルトの上限を入れるため、実質的に上限は必ず付く。ポリシーは保険として残した。
+
+**見つけた問題と修正: 作業場が PVC のクォータを使い切る**
+- kind で通しテストを繰り返すと、新しいタスクが「準備の途中で問題が起きました」で失敗した。原因は `ResourceQuota`(PVC 8 個)で、
+  保持期間 24 時間のままだと **1 日に 8 タスクで頭打ち**になる。本番でも同じことが起きる。
+- 修正: Implementer が成功した時点で、patch は Control Plane に保存されるので、**作業場をすぐ解放する**
+  (Publisher は DB の patch だけを使うため、誰も読まない)。**失敗したタスクの作業場だけ**、デバッグ用に保持期間まで残す。
+  クォータ超過のときは、分かりやすい文言を返す。クォータも広げた(PVC 12、容量 24Gi、Job 30)。
+- 設計メモ §5.1 と実行計画 §0 に反映した。
+
+**詰まったこと(テスト)**
+- `set -o pipefail` の下で `kubectl … | grep -q` は、`grep` が早く終了すると SIGPIPE でパイプ全体が失敗扱いになる。出力を変数に取ってから判定するようにした。
+- PVC の削除は非同期(PVC 保護のファイナライザが外れるまで `Terminating`)。「存在しない、または削除中」を解放済みとみなす。
+

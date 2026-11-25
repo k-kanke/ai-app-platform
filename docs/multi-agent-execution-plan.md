@@ -13,6 +13,11 @@
 | 最初の対象リポジトリ | **`k-kanke/genkan`**(公開) | 公開なので、Phase 1〜3 は認証なしで clone できる。鍵の扱いを後ろに回せる |
 | 最初の Orchestrator | **LLM を使わない**(フォームで repo と依頼文を指定)。チャットは最後(Phase 6) | 権限と承認の仕組みを先に固め、LLM による判断は後から載せる |
 | 配置 | `aap-agents`(新しい namespace)。`aap-apps`(家族のアプリ)とは分ける | 権限・NetworkPolicy・Admission Policy を別々に決めるため |
+| Implementer のエージェント | **`gemini`**(Gemini CLI)。既存の `agent-runtime/agents/gemini.sh` を使う | 2026-11-25 に決定 |
+| 作業場の容量 | **2 GiB** | `node_modules` を含むため、現行の `SourceSize`(1 GiB)より大きめ |
+| タスクの保持期間 | **24 時間**(完了・失敗した作業場と patch) | 切り分けに足りる長さ |
+| PR の種類 | **通常の PR**(draft にしない) | マージは人が GitHub 上で行う(承認 ②) |
+| 結果の見せ方 | **チャットに PR へのリンクを出し、マージ画面へすぐ移れる**ようにする | 承認 ② までを、チャットから 1 タップで進めるため |
 
 ### 作業の進め方(共通)
 
@@ -64,11 +69,11 @@ flowchart LR
 | やること | 場所(目安) |
 |---|---|
 | `tasks` テーブルの追加(id、repo、prompt、状態、作業場の名前、作成日時)。起動時の自動マイグレーション | `control-plane/internal/store/store.go` |
-| `EnsureTaskWorkspace`(タスクごとの PVC)、`EnsureImplementerJob`(init container で `git clone`、main で既存の `entrypoint.sh` 相当) | `control-plane/internal/kube/`(新しいファイル `task.go`) |
+| `EnsureTaskWorkspace`(タスクごとの PVC。**2 GiB**)、`EnsureImplementerJob`(init container で `git clone`、main で既存の `entrypoint.sh` 相当。エージェントは **`gemini`**) | `control-plane/internal/kube/`(新しいファイル `task.go`) |
 | タスクの手順(作業場作成 → Job → 完了待ち → 後片付け)。**write-ahead と冪等**の流儀に合わせる | `control-plane/internal/orchestrator/`(新しいファイル `task_flow.go`) |
 | API: `POST /api/v1/tasks`、`GET /api/v1/tasks/{id}`、イベントの SSE | `control-plane/internal/api/api.go` |
 | Implementer 用のエントリポイント(`/workspace/repo` で動かす。App Contract のチェックは外す) | `agent-runtime/` |
-| 期限切れの作業場の掃除(完了・失敗から N 時間後) | `task_flow.go` |
+| 期限切れの作業場の掃除(完了・失敗から **24 時間後**。設定 `AAP_TASK_RETENTION`) | `task_flow.go` |
 | リポジトリ名の許可リスト(`^k-kanke/[\w.-]+$` のパターン、設定で変更可能) | `config.go` |
 
 **設計上の注意**
@@ -80,7 +85,7 @@ flowchart LR
 1. kind で、genkan を指定して「README に 1 行足して」を依頼 → Job が完了し、作業場に変更が入っている。
 2. Go のテスト(状態遷移、冪等性、リポジトリ名の検証)が `-race` で通る。
 3. 既存のアプリ生成の e2e(`hack/e2e-kind.sh`)が壊れていない。
-4. 失敗した Job の作業場が、期限後に消える。
+4. 完了・失敗した作業場が、24 時間後に消える。
 
 **切り戻し**: タスク機能を無効にするフラグを置く(`AAP_TASKS_ENABLED`)。既存機能には触れない。
 
@@ -92,10 +97,10 @@ flowchart LR
 |---|---|
 | Implementer の最後に、`git diff --binary` で patch を作る(`git add -A` したうえで、コミットはしない) | `agent-runtime/` |
 | patch のアップロード用の内部 API(`POST /internal/v1/tasks/{id}/patch`)。**タスク専用のトークン**で認証し、サイズ上限をかける | `api.go` |
-| patch と sha256 の保存(ファイルは DB と同じ PVC、メタデータは SQLite) | `store.go` |
+| patch と sha256 の保存(ファイルは DB と同じ PVC、メタデータは SQLite。保持は 24 時間) | `store.go` |
 | patch の要約(変更ファイル、行数。保護パスへの変更の警告) | `control-plane/internal/` |
 | API: `GET /tasks/{id}/patch`、`POST /tasks/{id}/approve`(patch の hash を受け取る) | `api.go` |
-| genkan に最小の画面を足す: タスク作成フォーム、進捗、差分の表示、承認ボタン | `genkan/src/pages/` と `api/index.ts` |
+| genkan に最小の画面を足す: タスク作成フォーム、進捗、差分の表示、承認ボタン。**PR ができたら、PR へのリンクを出す**(Phase 4 で `pr_url` が入る) | `genkan/src/pages/` と `api/index.ts` |
 | genkan の nginx から Control Plane の API を中継する(`/api/` → `control-plane.platform-system`)。tailnet からのみ到達できる状態を保つ | `genkan/nginx.conf`、`networkpolicies.yaml` |
 
 **確認**
@@ -112,7 +117,7 @@ flowchart LR
 | やること | 場所(目安) |
 |---|---|
 | LLM ゲートウェイを置く(最小は自作の小さなリバースプロキシ。LiteLLM などの採用も検討)。API キーはここだけが持つ | `platform-system` に新しい Deployment |
-| Implementer には、**タスク専用の短命なトークン**だけを渡し、ベース URL をゲートウェイに向ける | `kube/task.go`、`agent-runtime/agents/` |
+| Implementer には、**タスク専用の短命なトークン**だけを渡し、ベース URL をゲートウェイに向ける。**Gemini CLI が、API のベース URL を環境変数などで差し替えられるかは未確認**。できなければ、ゲートウェイ方式を見直す(例: 通信先を Gemini API だけに絞り、キーは Job ごとの短命な設定にする) | `kube/task.go`、`agent-runtime/agents/gemini.sh` |
 | ゲートウェイで、トークンの検証、モデルの許可リスト、利用量の上限(トークン数・時間)、ログを行う | 新しいコンポーネント |
 | Implementer の egress を、**ゲートウェイ + DNS + package の許可リスト**に絞る(Cilium の FQDN ポリシー。`registry.npmjs.org` など) | `networkpolicies.yaml`(CiliumNetworkPolicy) |
 | 現行の `agent-credentials`(Secret を Job に渡す仕組み)を、タスクでは使わない | `kube/task.go` |
@@ -134,10 +139,11 @@ flowchart LR
 | **GitHub App を作る**(権限: Contents 書き込み、Pull requests 書き込み。対象リポジトリは genkan のみ)。**これは手作業で、あなたが行う** | GitHub の設定画面 |
 | App の秘密鍵は Secret として `platform-system` に置き、**Control Plane だけ**が読めるようにする(Git には置かない) | `kubernetes-platform`(Secret は手動作成) |
 | Control Plane が、タスクごとに **リポジトリ限定の installation token(1 時間)**を発行する | 新しいパッケージ `control-plane/internal/github/` |
-| Publisher Job: 新しく clone → patch を適用 → 検査 → `agent/<task>` に push → PR を作る(**LLM なし、固定コード**)。作業場の `.git` は使わない(設計メモ §5.3) | `agent-runtime/` とは別の小さなイメージ |
+| Publisher Job: 新しく clone → patch を適用 → 検査 → `agent/<task>` に push → **通常の PR**を作る(draft にしない)。PR の URL を Control Plane に返す(**LLM なし、固定コード**)。作業場の `.git` は使わない(設計メモ §5.3) | `agent-runtime/` とは別の小さなイメージ |
 | patch の検査: 保護パス(`.github/`、lockfile、CODEOWNERS、Dockerfile、デプロイ用 manifest)、サイズ、バイナリ・シンボリックリンク・実行権限の変更は既定で拒否 | Publisher と Control Plane の両方 |
 | Publisher の egress は GitHub(`api.github.com`、`github.com`)のみ | `networkpolicies.yaml` |
 | 承認 ① の hash と、Publisher が適用する patch の hash を照合する | `task_flow.go` |
+| タスクに `pr_url`(PR の URL)と `pr_number` を保存し、API と SSE で返す | `store.go`、`api.go` |
 
 **暫定措置**: **公開リポジトリの clone は、認証なしのままにする。** 非公開リポジトリは、この Phase では扱わない
 (読み取り専用トークンを、認証情報プロキシ経由で付ける仕組みは、必要になってから)。
@@ -176,9 +182,11 @@ flowchart LR
 | Orchestrator に、**狭いツール**を渡す: `run_task(repo, prompt)`、`get_task`、`ask_approval`、`publish` | LLM は、Pod の spec や権限を決められない |
 | チャットの文脈から、リポジトリ(許可リストの中から)と依頼文を決める | 曖昧なときは、チャットで聞き返す |
 | 承認 ① を、チャットの返信(「push してよいですか」)として出す | 既存の承認 API を使う |
+| PR ができたら、**チャットに PR のカードを出す**(タイトル、変更の要約、「PR を開く」ボタン)。ボタンは GitHub の PR ページ(`pr_url`)を開く。マージは GitHub 上で行う(承認 ②) | スマホでは GitHub アプリが開くことがある。リンクは `https://github.com/<owner>/<repo>/pull/<n>` の形 |
+| (任意)マージ後に、チャットへ「マージされました」を返す。GitHub の webhook か、PR の状態の定期確認で検知する | webhook は外から届く経路が要るので、最初は定期確認(数分おき)で足りる |
 | 複数リポジトリにまたがる依頼は、タスクを並列に作る(ユースケース B) | 設計メモ §7 |
 
-**確認**: 「genkan のインフラ画面のコンテナ詳細をトグルにしまって」と送って、承認を挟んで PR ができる(最初のゴール)。
+**確認**: 「genkan のインフラ画面のコンテナ詳細をトグルにしまって」と送って、承認を挟んで PR ができ、チャットの PR カードのボタンから、マージ画面へ 1 タップで移れる(最初のゴール)。
 
 ## 将来(必要になったら)
 
@@ -201,13 +209,14 @@ flowchart LR
 | patch の適用や `git` の実行で、任意コードが動く | Publisher の乗っ取り | 作業場の `.git` を使わず、新しい clone に patch だけを適用する(設計メモ §5.3)。適用の前に、patch に含まれるパスを検査する。新しい clone なので、Implementer が仕込んだフックや設定は存在しない |
 | genkan から Control Plane への経路が、意図せず広がる | 承認を迂回される | NetworkPolicy で genkan namespace からだけ許可。操作系 API は tailnet 内に限る |
 
-## 着手前に決めたいこと
+## 残っている確認事項
 
-1. **実行するエージェント**: `claude`(Claude Code CLI)と `gemini` のどちらを、Implementer の既定にするか。
-   既存の `agent-runtime/agents/` には両方ある。
-2. **作業場の容量**: 既定は 2 GiB でよいか(`node_modules` を含むため、`SourceSize` の 1 GiB より大きめを想定)。
-3. **タスクの保持期間**: 完了・失敗した作業場と patch を、何時間 / 何日残すか(切り分けのために 24 時間を仮置き)。
-4. **PR の扱い**: PR は draft で作るか、通常の PR で作るか。
+決定済みの項目は §0 の表にまとめた。着手前に、次の点を確かめる。
+
+1. **Gemini CLI のベース URL の差し替え**(Phase 3 に影響): 環境変数や設定ファイルで、API の向き先を変えられるか。
+   変えられない場合は、ゲートウェイ方式を見直す。
+2. **Gemini のモデルと予算**: 既定は `gemini-3.8-flash`(`AGENTS.md`)。Google 側の予算アラートを設定する。
+3. **スマホでの PR リンクの動き**: GitHub アプリが入っていれば、リンクがアプリで開く。入っていなければブラウザで開く。どちらでも使えるが、実機で確かめる。
 
 ## 次の一手
 

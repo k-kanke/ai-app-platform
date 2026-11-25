@@ -55,3 +55,19 @@ func TestClassifyTask(t *testing.T) {
 		t.Errorf("task fallback mentions the app: %q", got)
 	}
 }
+
+func TestClassifyPublish(t *testing.T) {
+	cases := map[string]string{
+		"publisher: FAILED: publish refused: .github/workflows/x.yml: CI":      "公開できない変更",
+		"the patch does not match the approved hash":                           "承認した差分",
+		"the patch does not apply to the current main: error: patch failed":    "最新のコードに適用できません",
+		"push: exit status 128: remote: error: GH006: Protected branch update": "GitHub への書き込みが拒否",
+		"open the pull request: github api: 422 Validation Failed":             "PR を作れませんでした",
+		"something odd": "PR を作る途中で止まりました",
+	}
+	for in, want := range cases {
+		if got := ClassifyPublish(in, ""); !strings.Contains(got, want) {
+			t.Errorf("ClassifyPublish(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+}

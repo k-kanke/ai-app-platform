@@ -3,6 +3,8 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -23,6 +25,7 @@ import (
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/api"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/config"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/events"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/orchestrator"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
@@ -39,12 +42,16 @@ type tenv struct {
 	orch *orchestrator.Orchestrator
 	ts   *httptest.Server
 	logs string // what the Implementer "printed"
+	// fake GitHub (only with topt.gh)
+	ghSrv     *httptest.Server
+	tokenReqs []map[string]any
 }
 
 type topt struct {
 	retention time.Duration
 	maxActive int
 	disabled  bool
+	gh        bool // configure a (fake) GitHub App so approved tasks are published
 	st        *store.Store
 	cs        *fake.Clientset
 }
@@ -67,13 +74,39 @@ func newTenv(t *testing.T, o topt) *tenv {
 	kc := kube.New(o.cs, cfg)
 	kc.LogReader = func(ctx context.Context, pod string, tail int64) (string, error) { return e.logs, nil }
 	broker := events.NewBroker()
-	e.orch = orchestrator.New(o.st, kc, broker, orchestrator.Options{TokenSecret: "s3cret", PollInterval: 5 * time.Millisecond,
-		AgentTimeout: time.Second, TaskRetention: o.retention}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	opts := orchestrator.Options{TokenSecret: "s3cret", PollInterval: 5 * time.Millisecond,
+		AgentTimeout: time.Second, TaskRetention: o.retention}
+	if o.gh {
+		key, _ := rsa.GenerateKey(rand.Reader, 2048)
+		e.ghSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/installation"):
+				w.Write([]byte(`{"id": 9}`))
+			case strings.HasSuffix(r.URL.Path, "/access_tokens"):
+				var in map[string]any
+				json.NewDecoder(r.Body).Decode(&in)
+				e.tokenReqs = append(e.tokenReqs, in)
+				w.WriteHeader(201)
+				w.Write([]byte(`{"token":"ghs_fake","expires_at":"2026-11-25T06:00:00Z"}`))
+			default:
+				w.WriteHeader(404)
+			}
+		}))
+		opts.GitHub = &github.App{ID: "1", Key: key, APIBase: e.ghSrv.URL}
+	}
+	e.orch = orchestrator.New(o.st, kc, broker, opts, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	base, cancel := context.WithCancel(context.Background())
 	srv := &api.Server{St: o.st, Kube: kc, Orch: e.orch, Broker: broker, BaseCtx: base, TasksEnabled: !o.disabled,
 		TaskRepoRe: regexp.MustCompile(`^k-kanke/[A-Za-z0-9._-]+$`), TaskMaxPatch: 2000, TaskMaxActive: o.maxActive}
 	e.ts = httptest.NewServer(srv.Handler())
-	t.Cleanup(func() { cancel(); e.orch.Wait(); e.ts.Close() })
+	t.Cleanup(func() {
+		cancel()
+		e.orch.Wait()
+		e.ts.Close()
+		if e.ghSrv != nil {
+			e.ghSrv.Close()
+		}
+	})
 	return e
 }
 
@@ -397,4 +430,193 @@ func TestActiveTaskHasNoFinishedAt(t *testing.T) {
 	if _, has := task["finishedAt"]; has {
 		t.Errorf("an unfinished task must not carry a finishedAt: %v", task["finishedAt"])
 	}
+}
+
+// ---- Phase 4: publishing ----
+
+func (e *tenv) pubJob(id string) *batchv1.Job {
+	e.t.Helper()
+	for i := 0; i < 400; i++ {
+		j, err := e.cs.BatchV1().Jobs(tns).Get(context.Background(), kube.PublisherJobName(id), metav1.GetOptions{})
+		if err == nil {
+			return j
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	e.t.Fatalf("publisher job for %s never appeared", id)
+	return nil
+}
+
+func (e *tenv) finishPub(id string, ok bool) {
+	e.t.Helper()
+	j := e.pubJob(id)
+	e.cs.CoreV1().Pods(tns).Create(context.Background(), &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: j.Name + "-pod", Namespace: tns, Labels: j.Spec.Template.Labels}}, metav1.CreateOptions{})
+	if ok {
+		j.Status.Succeeded = 1
+	} else {
+		j.Status.Failed = 1
+		j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"}}
+	}
+	if _, err := e.cs.BatchV1().Jobs(tns).UpdateStatus(context.Background(), j, metav1.UpdateOptions{}); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func envOf(j *batchv1.Job) map[string]string {
+	m := map[string]string{}
+	for _, v := range j.Spec.Template.Spec.Containers[0].Env {
+		m[v.Name] = v.Value
+	}
+	return m
+}
+
+// approved drives a task to AWAITING_APPROVAL and approves it.
+func (e *tenv) approved() (id string) {
+	e.t.Helper()
+	_, task := e.create("k-kanke/genkan", "インフラ画面のコンテナ詳細をトグルにしまって\n(詳細)")
+	id = task["id"].(string)
+	e.waitState(id, store.TaskRunning)
+	e.upload(id, orchestrator.TaskToken("s3cret", id), goodPatch)
+	e.finish(id, true)
+	e.waitState(id, store.TaskAwaitingApproval)
+	if code, out := e.req("POST", "/api/v1/tasks/"+id+"/approve", map[string]string{"patchSha256": sha(goodPatch)}, nil); code != 200 {
+		e.t.Fatalf("approve = %d %v", code, out)
+	}
+	return id
+}
+
+func TestApprovalLaunchesAPublisherWithAScopedToken(t *testing.T) {
+	e := newTenv(t, topt{gh: true})
+	id := e.approved()
+	e.waitState(id, store.TaskPublishing)
+
+	j := e.pubJob(id)
+	spec := j.Spec.Template.Spec
+	if j.Labels[kube.LabelRole] != kube.RolePublisher || *spec.AutomountServiceAccountToken {
+		t.Errorf("publisher job: %v token=%v", j.Labels, *spec.AutomountServiceAccountToken)
+	}
+	for _, v := range spec.Volumes {
+		if v.PersistentVolumeClaim != nil {
+			t.Errorf("the Publisher must not open the Implementer's workspace: %+v", v)
+		}
+	}
+	env := envOf(j)
+	if env["AAP_GITHUB_TOKEN"] != "ghs_fake" || env["AAP_PATCH_SHA"] != sha(goodPatch) || env["AAP_PR_TITLE"] != "インフラ画面のコンテナ詳細をトグルにしまって" {
+		t.Errorf("publisher env: %v", env)
+	}
+	if env["AAP_PUBLISHER_TOKEN"] != orchestrator.PublisherToken("s3cret", id) {
+		t.Errorf("publisher must carry its own token")
+	}
+	if len(e.tokenReqs) != 1 || e.tokenReqs[0]["repositories"].([]any)[0] != "genkan" {
+		t.Errorf("one repository-scoped GitHub token: %v", e.tokenReqs)
+	}
+	// The Implementer's job must never see a GitHub credential.
+	for k := range envOf(e.job(id)) {
+		if strings.Contains(k, "GITHUB") {
+			t.Errorf("the Implementer got %s", k)
+		}
+	}
+
+	// The Publisher reads the approved patch, then reports the PR.
+	pt := orchestrator.PublisherToken("s3cret", id)
+	rq := func(method, path, body, tok string) *http.Response {
+		r, _ := http.NewRequest(method, e.ts.URL+path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	if resp := rq("GET", "/internal/v1/tasks/"+id+"/patch", "", orchestrator.TaskToken("s3cret", id)); resp.StatusCode != 401 {
+		t.Errorf("the Implementer's token must not read the publish patch: %d", resp.StatusCode)
+	}
+	resp := rq("GET", "/internal/v1/tasks/"+id+"/patch", "", pt)
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || string(b) != goodPatch {
+		t.Fatalf("publisher patch: %d %q", resp.StatusCode, b)
+	}
+	if resp := rq("POST", "/internal/v1/tasks/"+id+"/published", `{"branch":"agent/`+id+`","prUrl":"https://evil.example/pull/1","prNumber":1}`, pt); resp.StatusCode != 400 {
+		t.Errorf("a PR url outside the repository must be refused: %d", resp.StatusCode)
+	}
+	if resp := rq("POST", "/internal/v1/tasks/"+id+"/published", `{"branch":"main","prUrl":"https://github.com/k-kanke/genkan/pull/5","prNumber":5}`, pt); resp.StatusCode != 400 {
+		t.Errorf("a branch other than agent/<id> must be refused: %d", resp.StatusCode)
+	}
+	if resp := rq("POST", "/internal/v1/tasks/"+id+"/published", `{"branch":"agent/`+id+`","prUrl":"https://github.com/k-kanke/genkan/pull/5","prNumber":5}`, pt); resp.StatusCode != 204 {
+		t.Fatalf("published = %d", resp.StatusCode)
+	}
+	e.finishPub(id, true)
+	got := e.waitState(id, store.TaskPublished)
+	if got["prUrl"] != "https://github.com/k-kanke/genkan/pull/5" || got["prNumber"].(float64) != 5 {
+		t.Errorf("task: %v", got)
+	}
+}
+
+func TestPublishFailureIsExplained(t *testing.T) {
+	e := newTenv(t, topt{gh: true})
+	id := e.approved()
+	e.waitState(id, store.TaskPublishing)
+	e.pubJob(id)
+	e.logs = "publisher: FAILED: publish refused: .github/workflows/x.yml: CI・権限の定義(.github)"
+	e.finishPub(id, false)
+	got := e.waitState(id, store.TaskFailed)
+	if !strings.Contains(got["userMessage"].(string), "公開できない変更") {
+		t.Errorf("message: %v", got["userMessage"])
+	}
+}
+
+func TestPublisherFinishingWithoutReportingFails(t *testing.T) {
+	e := newTenv(t, topt{gh: true})
+	id := e.approved()
+	e.waitState(id, store.TaskPublishing)
+	e.finishPub(id, true) // exits 0 but never posted the PR
+	got := e.waitState(id, store.TaskFailed)
+	if !strings.Contains(got["userMessage"].(string), "情報を受け取れません") {
+		t.Errorf("message: %v", got["userMessage"])
+	}
+}
+
+func TestWithoutGitHubAnApprovedTaskStaysApproved(t *testing.T) {
+	e := newTenv(t, topt{})
+	id := e.approved()
+	time.Sleep(50 * time.Millisecond)
+	if st := e.waitState(id, store.TaskApproved); st["state"] != store.TaskApproved {
+		t.Errorf("state: %v", st["state"])
+	}
+	if _, err := e.cs.BatchV1().Jobs(tns).Get(context.Background(), kube.PublisherJobName(id), metav1.GetOptions{}); err == nil {
+		t.Error("no publisher may start without a GitHub App")
+	}
+}
+
+func TestDoubleApprovalStartsOnePublisher(t *testing.T) {
+	e := newTenv(t, topt{gh: true})
+	id := e.approved()
+	e.waitState(id, store.TaskPublishing)
+	e.pubJob(id) // the token is minted just before the Job is created
+	if code, _ := e.req("POST", "/api/v1/tasks/"+id+"/approve", map[string]string{"patchSha256": sha(goodPatch)}, nil); code != 409 {
+		t.Errorf("second approval = %d, want 409", code)
+	}
+	if len(e.tokenReqs) != 1 {
+		t.Errorf("one token minted, got %d", len(e.tokenReqs))
+	}
+}
+
+func TestPublishingResumesAfterRestart(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	cs := fake.NewSimpleClientset()
+	ctx := context.Background()
+	st.CreateTask(ctx, store.Task{ID: "abc123", Repo: "k-kanke/genkan", Prompt: "x"})
+	st.SetTaskState(ctx, "abc123", store.TaskRunning, "")
+	sha1, _ := st.SaveTaskPatch(ctx, "abc123", []byte(goodPatch), 2000)
+	st.SetTaskState(ctx, "abc123", store.TaskAwaitingApproval, "")
+	st.ApproveTask(ctx, "abc123", sha1)
+	st.TransitionTask(ctx, "abc123", store.TaskApproved, store.TaskPublishing) // the old process died here
+	e := newTenv(t, topt{st: st, cs: cs, gh: true})
+	rctx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel) // runs before the environment's own cleanup, which waits for the publish goroutine
+	if err := e.orch.ResumeTasks(rctx); err != nil {
+		t.Fatal(err)
+	}
+	e.pubJob("abc123")
 }

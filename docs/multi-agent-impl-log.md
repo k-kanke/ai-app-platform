@@ -110,3 +110,44 @@
   ```
   これは Phase 3(LLM ゲートウェイ)までの暫定措置。ゲートウェイができたら、このコピーは削除する。
 
+## 2026-11-25 Phase 4: Publisher と GitHub 連携(コードとテスト。実機は GitHub App 待ち)
+
+**やったこと**(`ai-app-platform`)
+- `internal/github`: GitHub App の JWT(RS256、9 分)から、**1 リポジトリ限定・Contents と Pull requests の書き込みだけ**の
+  installation token を発行する。インストールはリポジトリから引く(ID を持たない)。PR の作成(**通常の PR**、draft にしない)と、
+  既存の PR の検索。
+- `internal/publisher` と `cmd/publisher`: Publisher Job の本体(LLM なし、固定コード)。承認された patch を Control Plane から
+  取得 → **sha256 を承認時のハッシュと照合** → 方針の検査(保護パス、バイナリ、実行権限の変更、シンボリックリンクは**拒否**)→
+  **新しい clone** に `git apply --index` → 変更されたファイルが承認済みの一覧と**完全に一致**することを確認 → `agent/<task>` に commit →
+  push(`main` へは push しない、force しない)→ PR を作成 → Control Plane に報告。作業場の `.git` は使わない(設計メモ §5.3)。
+  トークンは HTTP ヘッダでだけ渡し(リモート URL や設定に書かない)、エラー文からも除く。リトライは自分のブランチと PR を再利用する。
+- `kube/publisher.go`: Publisher の Job(`aap.dev/role=publisher`、作業場なし、SA トークンなし、読み取り専用ルート)。
+- Orchestrator: 承認 → `APPROVED → PUBLISHING`(compare-and-set で二重起動しない)→ トークン発行 → Job → 完了確認。
+  再起動後は `PUBLISHING` のタスクを再開する。GitHub App が未設定なら `APPROVED` のまま(PR は作らない)。
+- API: Publisher 専用の内部エンドポイント(承認済み patch の取得、PR の報告)。**Implementer とは別のトークン**。
+  報告された PR の URL は、そのタスクのリポジトリの PR でなければ拒否する。
+- `diagnose.ClassifyPublish`、`Dockerfile.publisher`(git が要るので alpine)、CI にイメージを追加。
+- `docs/multi-agent-github-app.md`: GitHub App の作り方(あなたの手作業)。
+
+**判断**
+- 保護パスの変更(`.github/`、ロックファイル、`Dockerfile*`、`deploy/`、`k8s/`、CODEOWNERS)は、承認画面では警告にとどめ、
+  **Publisher では既定で拒否**にした(設計メモ §5.3 どおり)。依存を足す変更はロックファイルを触るので拒否される。
+  緩めたくなったら、許可リストを足す(未決事項)。
+- Publisher のトークンは、Job の環境変数に直接入れた(Secret を作る権限を Control Plane に足さないため)。トークンは 1 時間で
+  切れ、Job は保持期間で消える。Secret にする案は、Phase 5 の Admission Policy と一緒に再検討する。
+- 承認画面の警告より、Publisher の拒否のほうが厳しい。人が承認しても、拒否されると `FAILED` と理由が出る。
+
+**確認**
+- ✅ `go test -race ./...` がすべて通る。`publisher` のテストは**本物の git** とローカルのベアリポジトリ(偽の GitHub API と
+  偽の Control Plane)で動く: 通常の PR と専用ブランチができる、`main` は変わらない、ハッシュ不一致の拒否、
+  6 種類の危険な変更(ワークフロー、ロックファイル、Dockerfile、シンボリックリンク、実行権限、バイナリ)の拒否で
+  何も push されず PR も作られない、`main` が先に進んだときの明確なエラー、リトライで PR が重複しない、トークンがエラーに出ない。
+- ✅ API のテスト: 承認で Publisher が起動し、リポジトリ限定のトークンが 1 回だけ発行される、Implementer のトークンでは
+  公開用の patch を読めない、Implementer の Job に GitHub の認証情報がない、不正な PR の URL・ブランチの拒否、
+  失敗の説明、二重承認で Publisher が 1 つだけ、再起動後の再開、App 未設定なら `APPROVED` のまま。
+- ⚠ 実際の GitHub への push と PR は未確認(GitHub App がまだないため)。`Dockerfile.publisher` は、CI でのビルド結果で確認する。
+
+**🖐 あなたの手作業が必要(未実施)**
+- GitHub App の作成、リポジトリへのインストール、`main` のブランチ保護、Secret の作成。手順は
+  [`multi-agent-github-app.md`](multi-agent-github-app.md)。
+

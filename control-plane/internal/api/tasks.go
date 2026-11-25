@@ -25,6 +25,8 @@ func (s *Server) registerTasks(m *http.ServeMux) {
 	m.HandleFunc("GET /api/v1/tasks/{id}/events", s.taskSSE)
 	m.HandleFunc("POST /internal/v1/tasks/{id}/events", s.taskAgentEvent)
 	m.HandleFunc("POST /internal/v1/tasks/{id}/patch", s.taskAgentPatch)
+	m.HandleFunc("GET /internal/v1/tasks/{id}/patch", s.publisherPatch)
+	m.HandleFunc("POST /internal/v1/tasks/{id}/published", s.publisherPublished)
 }
 
 type taskView struct {
@@ -157,6 +159,14 @@ func (s *Server) approveTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Orch.EmitTask(r.Context(), t.ID, store.TaskApproved, "承認しました")
+	if s.Orch.PublishEnabled() {
+		// Approved: hand over to the Publisher. The state change is a compare-and-set, so a double click
+		// cannot start two publishers.
+		if err := s.St.TransitionTask(r.Context(), t.ID, store.TaskApproved, store.TaskPublishing); err == nil {
+			cur, _ := s.St.GetTask(r.Context(), t.ID)
+			s.Orch.SubmitPublish(s.BaseCtx, cur)
+		}
+	}
 	t, _ = s.St.GetTask(r.Context(), t.ID)
 	writeJSON(w, 200, s.taskView(r, t))
 }
@@ -250,4 +260,64 @@ func (s *Server) taskAgentPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"sha256": sha, "bytes": len(data)})
+}
+
+// ---- Publisher-facing (a different per-task bearer token from the Implementer's) ----
+
+func (s *Server) publisherAuth(w http.ResponseWriter, r *http.Request) (store.Task, bool) {
+	id := r.PathValue("id")
+	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !s.Orch.ValidPublisherToken(id, tok) {
+		writeErr(w, 401, "unauthorized")
+		return store.Task{}, false
+	}
+	t, err := s.St.GetTask(r.Context(), id)
+	if err != nil || t.State != store.TaskPublishing {
+		writeErr(w, 409, "the task is not being published")
+		return t, false
+	}
+	return t, true
+}
+
+// publisherPatch serves the approved patch to the Publisher (only while the task is PUBLISHING).
+func (s *Server) publisherPatch(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.publisherAuth(w, r)
+	if !ok {
+		return
+	}
+	data, sha, err := s.St.GetTaskPatch(r.Context(), t.ID)
+	if err != nil || sha != t.PatchSHA {
+		writeErr(w, 404, "no approved patch")
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Patch-SHA256", sha)
+	_, _ = w.Write(data)
+}
+
+// publisherPublished records the opened pull request. The URL must point at a pull request of the task's repository.
+func (s *Server) publisherPublished(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.publisherAuth(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Branch   string `json:"branch"`
+		PRURL    string `json:"prUrl"`
+		PRNumber int    `json:"prNumber"`
+	}
+	if err := decode(r, &in); err != nil {
+		writeErr(w, 400, "invalid JSON")
+		return
+	}
+	if !strings.HasPrefix(in.PRURL, "https://github.com/"+t.Repo+"/pull/") || in.PRNumber <= 0 || in.Branch != "agent/"+t.ID {
+		writeErr(w, 400, "not a pull request of this task")
+		return
+	}
+	if err := s.St.MarkPublished(r.Context(), t.ID, in.PRURL, in.PRNumber); err != nil {
+		writeErr(w, 409, "the task is not being published")
+		return
+	}
+	s.Orch.EmitTask(r.Context(), t.ID, store.TaskPublished, "PR を作りました: "+in.PRURL)
+	w.WriteHeader(http.StatusNoContent)
 }

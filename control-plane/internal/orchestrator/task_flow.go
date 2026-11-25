@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/diagnose"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/patch"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
@@ -41,6 +43,10 @@ func (o *Orchestrator) ResumeTasks(ctx context.Context) error {
 	}
 	for _, t := range ts {
 		o.log.Info("resuming task", "task", t.ID, "state", t.State, "step", t.Step)
+		if t.State == store.TaskPublishing {
+			o.SubmitPublish(ctx, t)
+			continue
+		}
 		o.SubmitTask(ctx, t)
 	}
 	return nil
@@ -95,7 +101,7 @@ func (o *Orchestrator) runImplementer(ctx context.Context, t store.Task) error {
 	}
 	o.collectTaskTrace(ctx, t.ID)
 	if ph != kube.JobSucceeded {
-		tail, _ := o.kube.TaskLogTail(ctx, t.ID, 80)
+		tail, _ := o.kube.TaskLogTail(ctx, t.ID, kube.RoleImplementer, 80)
 		return o.failTaskWith(ctx, t, "implementer", diagnose.ClassifyTask(tail, reason), diagnose.Tail(tail, 60, 6000),
 			fmt.Errorf("implementer failed: %s", reason))
 	}
@@ -163,7 +169,7 @@ func (o *Orchestrator) waitTaskJob(ctx context.Context, id string, timeout time.
 }
 
 func (o *Orchestrator) collectTaskTrace(ctx context.Context, id string) {
-	logs, err := o.kube.TaskLogTail(ctx, id, 200)
+	logs, err := o.kube.TaskLogTail(ctx, id, kube.RoleImplementer, 200)
 	if err != nil {
 		return
 	}
@@ -212,6 +218,112 @@ func (o *Orchestrator) RunTaskReconcileLoop(ctx context.Context, interval time.D
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+	}
+}
+
+// ---- Publishing (Phase 4) ----
+
+// PublisherToken authorises the Publisher Job of one task: reading its approved patch and reporting the PR.
+// It differs from TaskToken, so an Implementer's token cannot be used to read or publish.
+func PublisherToken(secret, id string) string { return Token(secret, "publish:"+id) }
+
+func (o *Orchestrator) ValidPublisherToken(id, token string) bool {
+	return o.ValidToken("publish:"+id, token)
+}
+
+// PublishEnabled reports whether approved tasks are turned into pull requests.
+func (o *Orchestrator) PublishEnabled() bool { return o.opt.GitHub != nil }
+
+// SubmitPublish runs the publish step asynchronously (at most once per task id).
+func (o *Orchestrator) SubmitPublish(ctx context.Context, t store.Task) {
+	key := store.TaskKey(t.ID) + ":pub"
+	o.mu.Lock()
+	if o.running[key] {
+		o.mu.Unlock()
+		return
+	}
+	o.running[key] = true
+	o.mu.Unlock()
+	o.wg.Add(1)
+	go func() {
+		defer o.wg.Done()
+		defer func() { o.mu.Lock(); delete(o.running, key); o.mu.Unlock() }()
+		if err := o.runPublish(ctx, t); err != nil && ctx.Err() == nil {
+			o.log.Error("publish failed", "task", t.ID, "err", err)
+		}
+	}()
+}
+
+func prTitle(prompt string) string {
+	line := strings.TrimSpace(strings.SplitN(strings.TrimSpace(prompt), "\n", 2)[0])
+	if r := []rune(line); len(r) > 70 {
+		line = string(r[:70]) + "…"
+	}
+	return line
+}
+
+func (o *Orchestrator) runPublish(ctx context.Context, t store.Task) error {
+	if o.opt.GitHub == nil {
+		return o.failTask(ctx, t, "publish", "GitHub につながっていないため、PR を作れません。", errors.New("github app is not configured"))
+	}
+	o.EmitTask(ctx, t.ID, store.TaskPublishing, "PR を作っています")
+	var tok github.Token
+	if err := retry(ctx, func() error {
+		var err error
+		tok, err = o.opt.GitHub.InstallationToken(ctx, t.Repo)
+		return err
+	}); err != nil {
+		return o.failTask(ctx, t, "publish", "GitHub の権限を取得できませんでした。GitHub App がこのリポジトリに入っているか確認してください。", err)
+	}
+	spec := kube.PublishSpec{
+		ID: t.ID, Repo: t.Repo, PatchSHA: t.PatchSHA, GitHubToken: tok.Value, PublisherToken: PublisherToken(o.opt.TokenSecret, t.ID),
+		Title: prTitle(t.Prompt),
+		Body:  "## 依頼\n\n" + t.Prompt + "\n\n---\ngenkan のタスク `" + t.ID + "` から作られました。内容を確認してから、マージしてください。",
+	}
+	if err := retry(ctx, func() error { return o.kube.EnsurePublisherJob(ctx, spec) }); err != nil {
+		return o.failTask(ctx, t, "publish", "PR を作る準備に失敗しました。", err)
+	}
+	ph, reason, err := o.waitPublisherJob(ctx, t.ID, 10*time.Minute)
+	if err != nil {
+		return err
+	}
+	if ph != kube.JobSucceeded {
+		tail, _ := o.kube.TaskLogTail(ctx, t.ID, kube.RolePublisher, 60)
+		return o.failTaskWith(ctx, t, "publish", diagnose.ClassifyPublish(tail, reason), diagnose.Tail(tail, 60, 6000),
+			fmt.Errorf("publisher failed: %s", reason))
+	}
+	cur, err := o.st.GetTask(ctx, t.ID)
+	if err != nil {
+		return err
+	}
+	if cur.State != store.TaskPublished || cur.PRURL == "" {
+		return o.failTask(ctx, t, "publish", "PR は作られましたが、その情報を受け取れませんでした。GitHub を確認してください。",
+			fmt.Errorf("publisher finished but the task is %s without a PR url", cur.State))
+	}
+	return nil
+}
+
+func (o *Orchestrator) waitPublisherJob(ctx context.Context, id string, timeout time.Duration) (kube.JobPhase, string, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		ph, reason, err := o.kube.PublisherJobStatus(ctx, id)
+		if err != nil {
+			return "", "", err
+		}
+		switch ph {
+		case kube.JobSucceeded, kube.JobFailed:
+			return ph, reason, nil
+		case kube.JobMissing:
+			return ph, "job disappeared", nil
+		}
+		if time.Now().After(deadline) {
+			return kube.JobFailed, "timed out waiting for the publisher job", nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		case <-time.After(o.opt.PollInterval):
 		}
 	}
 }

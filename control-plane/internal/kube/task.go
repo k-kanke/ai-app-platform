@@ -163,9 +163,10 @@ func (c *Client) TaskJobStatus(ctx context.Context, id string) (JobPhase, string
 	return c.jobStatusIn(ctx, c.cfg.TasksNamespace, TaskJobName(id))
 }
 
-// TaskLogTail returns the last lines of the Implementer pod's log (empty if the pod is gone).
-func (c *Client) TaskLogTail(ctx context.Context, id string, lines int64) (string, error) {
-	sel := fmt.Sprintf("%s=%s", LabelTaskID, id)
+// TaskLogTail returns the last lines of the log of the task's pod for role (RoleImplementer or
+// RolePublisher). It is empty if the pod is gone.
+func (c *Client) TaskLogTail(ctx context.Context, id, role string, lines int64) (string, error) {
+	sel := fmt.Sprintf("%s=%s,%s=%s", LabelTaskID, id, LabelRole, role)
 	pods, err := c.cs.CoreV1().Pods(c.cfg.TasksNamespace).List(ctx, metav1.ListOptions{LabelSelector: sel})
 	if err != nil || len(pods.Items) == 0 {
 		return "", err
@@ -174,7 +175,7 @@ func (c *Client) TaskLogTail(ctx context.Context, id string, lines int64) (strin
 		return c.LogReader(ctx, pods.Items[0].Name, lines)
 	}
 	raw, err := c.cs.CoreV1().Pods(c.cfg.TasksNamespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{
-		Container: "implementer", TailLines: &lines}).Do(ctx).Raw()
+		Container: role, TailLines: &lines}).Do(ctx).Raw()
 	return string(raw), err
 }
 

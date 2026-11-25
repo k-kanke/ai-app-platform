@@ -18,6 +18,7 @@ import (
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/api"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/config"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/events"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/orchestrator"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
@@ -60,9 +61,24 @@ func run(log *slog.Logger) error {
 
 	k := kube.New(cs, cfg)
 	broker := events.NewBroker()
+	var gh *github.App
+	if cfg.TasksEnabled && cfg.GitHubAppID != "" && cfg.GitHubAppKeyFile != "" {
+		pemBytes, rerr := os.ReadFile(cfg.GitHubAppKeyFile)
+		if rerr != nil {
+			return errors.New("cannot read AAP_GITHUB_APP_KEY_FILE: " + rerr.Error())
+		}
+		key, kerr := github.ParseKey(pemBytes)
+		if kerr != nil {
+			return kerr
+		}
+		gh = &github.App{ID: cfg.GitHubAppID, Key: key, APIBase: cfg.GitHubAPIBase}
+		log.Info("github app configured: approved tasks will be published as pull requests", "app", cfg.GitHubAppID)
+	} else if cfg.TasksEnabled {
+		log.Info("no github app configured: approved tasks stay APPROVED (no pull request is opened)")
+	}
 	orch := orchestrator.New(st, k, broker, orchestrator.Options{
 		TokenSecret: cfg.TokenSecret, AgentTimeout: cfg.AgentTimeout + time.Minute, RuntimeTimeout: cfg.RuntimeTimeout, PollInterval: cfg.PollInterval,
-		TaskRetention: cfg.TaskRetention,
+		TaskRetention: cfg.TaskRetention, GitHub: gh,
 	}, log)
 	var repoRe *regexp.Regexp
 	if cfg.TasksEnabled {

@@ -15,13 +15,13 @@
 </style></head><body>
 <div class="term">
   <div class="bar"><i></i><i></i><i></i></div>
-<pre><span class="g">$ kubectl describe pod d1-pod-b -n storage-lab</span>
-<span class="d">  ...</span>
+<pre><span class="w">$ </span><span class="g">kubectl</span><span class="w"> describe pod d1-pod-b -n storage-lab</span>
+<span class="w">  ...</span>
 <span class="w">  Events:
     Type     Reason            Age   From               Message
     ----     ------            ----  ----               -------
     Warning  FailedScheduling  20s   default-scheduler  0/3 nodes are available:</span>
-<span class="g">      1 node(s) didn't match PersistentVolume's node affinity,</span>
+<span class="w">      1 node(s) didn't match PersistentVolume's node affinity,</span>
 <span class="w">      1 node(s) didn't match Pod's node affinity/selector,
       1 node(s) had untolerated taint(s).
       no new claims to deallocate,

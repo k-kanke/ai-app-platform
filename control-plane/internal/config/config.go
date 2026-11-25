@@ -49,6 +49,12 @@ type Config struct {
 	TaskMaxPatchBytes int           // larger patches are rejected
 	TaskMaxActive     int           // tasks running at once
 	TaskGitBase       string        // clone URL base; empty = https://github.com (tests point it elsewhere)
+
+	// Publishing a task as a pull request. Off (tasks stop at APPROVED) unless a GitHub App is configured.
+	PublisherImage   string
+	GitHubAppID      string
+	GitHubAppKeyFile string // PEM private key of the GitHub App (a mounted Secret; never in Git)
+	GitHubAPIBase    string // empty = https://api.github.com (tests)
 }
 
 func Load() (Config, error) {
@@ -78,6 +84,10 @@ func Load() (Config, error) {
 		TaskWorkspaceSize:  env("AAP_TASK_WORKSPACE_SIZE", "2Gi"),
 		TaskRepoPattern:    env("AAP_TASK_REPO_PATTERN", `^k-kanke/[A-Za-z0-9._-]+$`),
 		TaskGitBase:        os.Getenv("AAP_TASK_GIT_BASE"),
+		PublisherImage:     env("AAP_PUBLISHER_IMAGE", "aap-publisher:dev"),
+		GitHubAppID:        os.Getenv("AAP_GITHUB_APP_ID"),
+		GitHubAppKeyFile:   os.Getenv("AAP_GITHUB_APP_KEY_FILE"),
+		GitHubAPIBase:      os.Getenv("AAP_GITHUB_API_BASE"),
 	}
 	hours, err := strconv.Atoi(env("AAP_TASK_RETENTION_HOURS", "24"))
 	if err != nil || hours <= 0 {

@@ -20,6 +20,7 @@ import (
 
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/diagnose"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/events"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/trace"
@@ -32,6 +33,9 @@ type Options struct {
 	HelperTimeout  time.Duration
 	AgentTimeout   time.Duration
 	TaskRetention  time.Duration // repository tasks: how long a finished task keeps its workspace and patch
+	// GitHub is the GitHub App used to publish approved tasks as pull requests. nil = publishing is off
+	// and an approved task stays APPROVED.
+	GitHub *github.App
 }
 
 type Orchestrator struct {

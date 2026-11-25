@@ -78,3 +78,22 @@ func ClassifyTask(logTail, reason string) string {
 	}
 	return taskFallback
 }
+
+var publishRules = []rule{
+	{regexp.MustCompile(`publish refused`), "公開できない変更が含まれていました(CI の定義、ロックファイル、Dockerfile、バイナリなど)。"},
+	{regexp.MustCompile(`does not match the approved hash`), "承認した差分と、公開しようとした差分が一致しませんでした。もう一度やり直してください。"},
+	{regexp.MustCompile(`does not apply`), "差分を最新のコードに適用できませんでした(元のコードが変わった可能性があります)。もう一度依頼してください。"},
+	{regexp.MustCompile(`(?i)push:.*(denied|protected|403|permission)|Permission to .* denied|remote: error`), "GitHub への書き込みが拒否されました。GitHub App の権限やブランチ保護を確認してください。"},
+	{regexp.MustCompile(`open the pull request`), "ブランチは作れましたが、PR を作れませんでした。GitHub を確認してください。"},
+}
+
+// ClassifyPublish is Classify for a task's Publisher.
+func ClassifyPublish(logTail, reason string) string {
+	text := logTail + "\n" + reason
+	for _, r := range publishRules {
+		if r.re.MatchString(text) {
+			return r.msg
+		}
+	}
+	return "PR を作る途中で止まりました。詳しい内容はログで確認できます。"
+}

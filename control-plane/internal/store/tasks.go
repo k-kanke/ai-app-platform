@@ -140,7 +140,7 @@ func collectTasks(rows *sql.Rows) ([]Task, error) {
 
 // UnfinishedTasks are the tasks a Control Plane restart must pick up again (oldest first).
 func (s *Store) UnfinishedTasks(ctx context.Context) ([]Task, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE state IN (?,?) ORDER BY created_at`, TaskPending, TaskRunning)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE state IN (?,?,?) ORDER BY created_at`, TaskPending, TaskRunning, TaskPublishing)
 	if err != nil {
 		return nil, err
 	}
@@ -159,8 +159,8 @@ func (s *Store) CountActiveTasks(ctx context.Context) (int, error) {
 // workspace and patch have not been removed yet.
 func (s *Store) ExpiredTasks(ctx context.Context, cutoff time.Time) ([]Task, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks
-	  WHERE state <> ? AND state NOT IN (?,?) AND updated_at < ? ORDER BY created_at`,
-		TaskExpired, TaskPending, TaskRunning, ts(cutoff))
+	  WHERE state <> ? AND state NOT IN (?,?,?) AND updated_at < ? ORDER BY created_at`,
+		TaskExpired, TaskPending, TaskRunning, TaskPublishing, ts(cutoff))
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +296,23 @@ func (s *Store) TransitionTask(ctx context.Context, id, from, to string) error {
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE tasks SET state=?, finished_at=CASE WHEN ?='' THEN finished_at ELSE ? END, updated_at=? WHERE id=? AND state=?`,
 		to, fin, fin, ts(time.Now()), id, from)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, gerr := s.GetTask(ctx, id); gerr != nil {
+			return gerr
+		}
+		return ErrConflict
+	}
+	return nil
+}
+
+// MarkPublished records the pull request and moves PUBLISHING to PUBLISHED in one step.
+func (s *Store) MarkPublished(ctx context.Context, id, prURL string, prNumber int) error {
+	now := ts(time.Now())
+	res, err := s.db.ExecContext(ctx, `UPDATE tasks SET state=?, pr_url=?, pr_number=?, finished_at=?, updated_at=? WHERE id=? AND state=?`,
+		TaskPublished, prURL, prNumber, now, now, id, TaskPublishing)
 	if err != nil {
 		return err
 	}

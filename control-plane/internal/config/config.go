@@ -2,11 +2,25 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"time"
 )
+
+// DeployTarget says which Deployment runs a repository's image. Control Plane may restart exactly these (nothing else).
+type DeployTarget struct {
+	Repo       string `json:"repo"`       // "owner/name" of the source repository
+	Namespace  string `json:"namespace"`  // where the Deployment runs
+	Deployment string `json:"deployment"` // its name
+	Container  string `json:"container"`  // the container whose image is watched ("" = the Deployment's name)
+	Image      string `json:"image"`      // e.g. ghcr.io/k-kanke/genkan
+	Tag        string `json:"tag"`        // e.g. latest
+	// SHATagPrefix: the repository's CI also pushes the image as <prefix><first 7 chars of the commit sha> (default "sha-").
+	// The deploy step waits for that tag of the merge commit, so it never mistakes an older image for the merged change.
+	SHATagPrefix string `json:"shaTagPrefix"`
+}
 
 type Config struct {
 	Listen    string
@@ -59,6 +73,14 @@ type Config struct {
 	// LLM gateway (docs/multi-agent-permissions.md §3). When set, Implementers get a short-lived task token and this
 	// base URL instead of the shared API key Secret.
 	LLMGatewayURL string
+
+	// After a task's pull request is merged, roll the repository's deployment onto the new image (docs/multi-agent-execution-plan.md).
+	// A repository without a target is not deployed. Parsed from AAP_DEPLOY_TARGETS (a JSON array).
+	DeployTargets     []DeployTarget
+	DeployPoll        time.Duration // how often pull requests and rollouts are checked
+	DeployImageWait   time.Duration // how long to wait, after the merge, for CI to push a new image
+	DeployRolloutWait time.Duration // how long a restart may take
+	TaskWatchDays     int           // how long a pull request is watched for a merge
 }
 
 func Load() (Config, error) {
@@ -93,7 +115,35 @@ func Load() (Config, error) {
 		GitHubAppKeyFile:   os.Getenv("AAP_GITHUB_APP_KEY_FILE"),
 		GitHubAPIBase:      os.Getenv("AAP_GITHUB_API_BASE"),
 		LLMGatewayURL:      os.Getenv("AAP_LLM_GATEWAY_URL"),
+		DeployPoll:         30 * time.Second,
+		DeployImageWait:    20 * time.Minute,
+		DeployRolloutWait:  10 * time.Minute,
 	}
+	if raw := os.Getenv("AAP_DEPLOY_TARGETS"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &c.DeployTargets); err != nil {
+			return c, fmt.Errorf("AAP_DEPLOY_TARGETS must be a JSON array: %w", err)
+		}
+		for i := range c.DeployTargets {
+			d := &c.DeployTargets[i]
+			if d.Container == "" {
+				d.Container = d.Deployment
+			}
+			if d.Tag == "" {
+				d.Tag = "latest"
+			}
+			if d.SHATagPrefix == "" {
+				d.SHATagPrefix = "sha-"
+			}
+			if d.Repo == "" || d.Namespace == "" || d.Deployment == "" || d.Image == "" {
+				return c, fmt.Errorf("AAP_DEPLOY_TARGETS[%d] needs repo, namespace, deployment and image", i)
+			}
+		}
+	}
+	watch, werr := strconv.Atoi(env("AAP_TASK_WATCH_DAYS", "7"))
+	if werr != nil || watch <= 0 {
+		return c, fmt.Errorf("AAP_TASK_WATCH_DAYS must be a positive integer")
+	}
+	c.TaskWatchDays = watch
 	hours, err := strconv.Atoi(env("AAP_TASK_RETENTION_HOURS", "24"))
 	if err != nil || hours <= 0 {
 		return c, fmt.Errorf("AAP_TASK_RETENTION_HOURS must be a positive integer")

@@ -17,7 +17,11 @@ const (
 	TaskAwaitingApproval = "AWAITING_APPROVAL" // a patch exists and waits for a human
 	TaskApproved         = "APPROVED"          // the human approved this exact patch (hash)
 	TaskPublishing       = "PUBLISHING"        // Publisher is pushing / opening the PR
-	TaskPublished        = "PUBLISHED"         // PR opened
+	TaskPublished        = "PUBLISHED"         // PR opened (waiting for a human to merge it, when the repository has a deploy target)
+	TaskMerged           = "MERGED"            // the PR was merged; waiting for CI to push a new image
+	TaskDeploying        = "DEPLOYING"         // the deployment was restarted onto the new image
+	TaskDeployed         = "DEPLOYED"          // the new image is running
+	TaskClosed           = "CLOSED"            // the PR was closed without being merged
 	TaskNoChanges        = "NO_CHANGES"        // the Implementer finished without changing anything
 	TaskRejected         = "REJECTED"          // the human said no
 	TaskFailed           = "FAILED"
@@ -43,6 +47,7 @@ type Task struct {
 	PatchLen int    `json:"patchBytes,omitempty"`
 	PRURL    string `json:"prUrl,omitempty"`
 	PRNumber int    `json:"prNumber,omitempty"`
+	MergeSHA string `json:"mergeSha,omitempty"` // the commit the merge created on the default branch (deploy step)
 
 	IdempotencyKey string    `json:"-"`
 	CreatedAt      time.Time `json:"createdAt"`
@@ -56,7 +61,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   state TEXT NOT NULL, step TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
   user_message TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', trace TEXT NOT NULL DEFAULT '',
   patch_sha TEXT NOT NULL DEFAULT '', patch_len INTEGER NOT NULL DEFAULT 0,
-  pr_url TEXT NOT NULL DEFAULT '', pr_number INTEGER NOT NULL DEFAULT 0,
+  pr_url TEXT NOT NULL DEFAULT '', pr_number INTEGER NOT NULL DEFAULT 0, merge_sha TEXT NOT NULL DEFAULT '',
   idempotency_key TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT NOT NULL DEFAULT '');
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_idem ON tasks(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> '';
@@ -65,14 +70,14 @@ CREATE TABLE IF NOT EXISTS task_patches (
   task_id TEXT PRIMARY KEY, sha256 TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
 `
 
-const taskCols = `id, repo, prompt, state, step, error, user_message, detail, trace, patch_sha, patch_len, pr_url, pr_number, idempotency_key, created_at, updated_at, finished_at`
+const taskCols = `id, repo, prompt, state, step, error, user_message, detail, trace, patch_sha, patch_len, pr_url, pr_number, merge_sha, idempotency_key, created_at, updated_at, finished_at`
 
 func scanTask(r scanner) (Task, error) {
 	var t Task
 	var idem sql.NullString
 	var c, u, f string
 	if err := r.Scan(&t.ID, &t.Repo, &t.Prompt, &t.State, &t.Step, &t.Error, &t.UserMessage, &t.Detail, &t.Trace,
-		&t.PatchSHA, &t.PatchLen, &t.PRURL, &t.PRNumber, &idem, &c, &u, &f); err != nil {
+		&t.PatchSHA, &t.PatchLen, &t.PRURL, &t.PRNumber, &t.MergeSHA, &idem, &c, &u, &f); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Task{}, ErrNotFound
 		}
@@ -155,12 +160,29 @@ func (s *Store) CountActiveTasks(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// ExpiredTasks are finished (or abandoned while awaiting approval) tasks older than cutoff whose
-// workspace and patch have not been removed yet.
-func (s *Store) ExpiredTasks(ctx context.Context, cutoff time.Time) ([]Task, error) {
+// ExpiredTasks are tasks whose workspace and patch can go. Finished (or abandoned while awaiting approval) tasks
+// expire at cutoff. A PUBLISHED task is still watched for its merge, so it lasts until watchCutoff; MERGED and DEPLOYING
+// tasks are being worked on and never expire (their own timeouts turn them into FAILED, which then expires normally).
+func (s *Store) ExpiredTasks(ctx context.Context, cutoff, watchCutoff time.Time) ([]Task, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks
-	  WHERE state <> ? AND state NOT IN (?,?,?) AND updated_at < ? ORDER BY created_at`,
-		TaskExpired, TaskPending, TaskRunning, TaskPublishing, ts(cutoff))
+	  WHERE state <> ? AND (
+	    (state NOT IN (?,?,?,?,?,?) AND updated_at < ?) OR
+	    (state = ? AND updated_at < ?))
+	  ORDER BY created_at`,
+		TaskExpired,
+		TaskPending, TaskRunning, TaskPublishing, TaskPublished, TaskMerged, TaskDeploying, ts(cutoff),
+		TaskPublished, ts(watchCutoff))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectTasks(rows)
+}
+
+// WatchedTasks are the tasks whose pull request or rollout is followed after publishing (oldest first).
+func (s *Store) WatchedTasks(ctx context.Context) ([]Task, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+taskCols+` FROM tasks WHERE state IN (?,?,?) ORDER BY created_at`,
+		TaskPublished, TaskMerged, TaskDeploying)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +192,7 @@ func (s *Store) ExpiredTasks(ctx context.Context, cutoff time.Time) ([]Task, err
 
 func isTerminal(state string) bool {
 	switch state {
-	case TaskPublished, TaskNoChanges, TaskRejected, TaskFailed, TaskExpired:
+	case TaskPublished, TaskNoChanges, TaskRejected, TaskFailed, TaskExpired, TaskDeployed, TaskClosed:
 		return true
 	}
 	return false
@@ -313,6 +335,22 @@ func (s *Store) MarkPublished(ctx context.Context, id, prURL string, prNumber in
 	now := ts(time.Now())
 	res, err := s.db.ExecContext(ctx, `UPDATE tasks SET state=?, pr_url=?, pr_number=?, finished_at=?, updated_at=? WHERE id=? AND state=?`,
 		TaskPublished, prURL, prNumber, now, now, id, TaskPublishing)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, gerr := s.GetTask(ctx, id); gerr != nil {
+			return gerr
+		}
+		return ErrConflict
+	}
+	return nil
+}
+
+// MarkMerged moves PUBLISHED to MERGED and records the commit the merge created (compare-and-set: only one caller wins).
+func (s *Store) MarkMerged(ctx context.Context, id, mergeSHA string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE tasks SET state=?, merge_sha=?, updated_at=? WHERE id=? AND state=?`,
+		TaskMerged, mergeSHA, ts(time.Now()), id, TaskPublished)
 	if err != nil {
 		return err
 	}

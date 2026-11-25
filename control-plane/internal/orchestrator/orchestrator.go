@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/config"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/diagnose"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/events"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
@@ -33,11 +34,18 @@ type Options struct {
 	HelperTimeout  time.Duration
 	AgentTimeout   time.Duration
 	TaskRetention  time.Duration // repository tasks: how long a finished task keeps its workspace and patch
+	TaskWatch      time.Duration // how long a published pull request is watched for its merge
 	// GitHub is the GitHub App used to publish approved tasks as pull requests. nil = publishing is off
 	// and an approved task stays APPROVED.
 	GitHub *github.App
 	// LLMGateway: Implementers get a task token for the LLM gateway (see config.LLMGatewayURL).
 	LLMGateway bool
+
+	// The deploy step (deploy_flow.go): which repositories are rolled out after a merge, and how.
+	Deploy            []config.DeployTarget
+	Registry          ImageRegistry
+	DeployImageWait   time.Duration // how long to wait, after the merge, for a new image
+	DeployRolloutWait time.Duration // how long a restart may take
 }
 
 type Orchestrator struct {
@@ -49,6 +57,7 @@ type Orchestrator struct {
 
 	mu      sync.Mutex
 	running map[string]bool // op id -> goroutine active
+	tokens  tokenCache
 	wg      sync.WaitGroup
 }
 
@@ -64,6 +73,12 @@ func New(st *store.Store, k *kube.Client, b *events.Broker, opt Options, log *sl
 	}
 	if opt.AgentTimeout == 0 {
 		opt.AgentTimeout = 25 * time.Minute
+	}
+	if opt.DeployImageWait == 0 {
+		opt.DeployImageWait = 20 * time.Minute
+	}
+	if opt.DeployRolloutWait == 0 {
+		opt.DeployRolloutWait = 10 * time.Minute
 	}
 	return &Orchestrator{st: st, kube: k, broker: b, opt: opt, log: log, running: map[string]bool{}}
 }

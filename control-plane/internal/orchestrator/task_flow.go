@@ -202,7 +202,11 @@ func (o *Orchestrator) ReconcileTasks(ctx context.Context) error {
 	if o.opt.TaskRetention <= 0 {
 		return nil
 	}
-	old, err := o.st.ExpiredTasks(ctx, time.Now().Add(-o.opt.TaskRetention))
+	watch := o.opt.TaskWatch
+	if watch <= 0 {
+		watch = o.opt.TaskRetention
+	}
+	old, err := o.st.ExpiredTasks(ctx, time.Now().Add(-o.opt.TaskRetention), time.Now().Add(-watch))
 	if err != nil {
 		return err
 	}

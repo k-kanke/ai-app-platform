@@ -100,19 +100,54 @@ func TestUnfinishedAndExpired(t *testing.T) {
 	}
 	// Nothing is old enough yet; once the cutoff is in the future, finished and abandoned tasks expire
 	// but running/pending ones never do.
-	if ex, _ := s.ExpiredTasks(ctx, time.Now().Add(-time.Hour)); len(ex) != 0 {
+	if ex, _ := s.ExpiredTasks(ctx, time.Now().Add(-time.Hour), time.Now().Add(-time.Hour)); len(ex) != 0 {
 		t.Fatalf("expired too early: %d", len(ex))
 	}
-	ex, _ := s.ExpiredTasks(ctx, time.Now().Add(time.Hour))
+	ex, _ := s.ExpiredTasks(ctx, time.Now().Add(time.Hour), time.Now().Add(time.Hour))
 	if len(ex) != 2 {
 		t.Fatalf("expired = %d, want waiting+failed", len(ex))
 	}
 	s.SetTaskState(ctx, "failed", TaskExpired, "")
-	if ex, _ := s.ExpiredTasks(ctx, time.Now().Add(time.Hour)); len(ex) != 1 {
+	if ex, _ := s.ExpiredTasks(ctx, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); len(ex) != 1 {
 		t.Fatalf("an expired task must not be listed again: %d", len(ex))
 	}
 	f, _ := s.GetTask(ctx, "failed")
 	if f.FinishedAt.IsZero() || f.UserMessage == "" {
 		t.Fatalf("failure fields: %+v", f)
+	}
+}
+
+func TestWatchedAndExpiryOfPublishedTasks(t *testing.T) {
+	ctx := context.Background()
+	s, _ := Open(":memory:")
+	for _, id := range []string{"pub", "merged", "deploying", "done", "other"} {
+		newTask(t, s, id, "")
+	}
+	s.SetTaskState(ctx, "pub", TaskPublished, "")
+	s.SetTaskState(ctx, "merged", TaskMerged, "")
+	s.SetTaskState(ctx, "deploying", TaskDeploying, "")
+	s.SetTaskState(ctx, "done", TaskDeployed, "")
+	s.SetTaskState(ctx, "other", TaskFailed, "")
+	w, _ := s.WatchedTasks(ctx)
+	if len(w) != 3 {
+		t.Fatalf("watched = %d, want published+merged+deploying", len(w))
+	}
+	// Retention passed, but the watch window has not: a PUBLISHED task is still waiting for its merge.
+	ex, _ := s.ExpiredTasks(ctx, time.Now().Add(time.Hour), time.Now().Add(-time.Hour))
+	got := map[string]bool{}
+	for _, e := range ex {
+		got[e.ID] = true
+	}
+	if got["pub"] || got["merged"] || got["deploying"] || !got["done"] || !got["other"] {
+		t.Fatalf("expired = %v: finished tasks expire, watched ones do not", got)
+	}
+	// Past the watch window an unmerged PR is let go; MERGED and DEPLOYING never expire.
+	ex, _ = s.ExpiredTasks(ctx, time.Now().Add(time.Hour), time.Now().Add(time.Hour))
+	got = map[string]bool{}
+	for _, e := range ex {
+		got[e.ID] = true
+	}
+	if !got["pub"] || got["merged"] || got["deploying"] {
+		t.Fatalf("expired after the watch window = %v", got)
 	}
 }

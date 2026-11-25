@@ -32,10 +32,15 @@ func (s *Server) registerTasks(m *http.ServeMux) {
 type taskView struct {
 	store.Task
 	Summary *patch.Summary `json:"summary,omitempty"` // what the patch changes, once there is one
+	// AutoDeploy: once the pull request is merged, the repository's deployment is rolled onto the new image automatically.
+	AutoDeploy bool `json:"autoDeploy,omitempty"`
 }
 
 func (s *Server) taskView(r *http.Request, t store.Task) taskView {
 	v := taskView{Task: t}
+	if _, ok := s.Orch.DeployTarget(t.Repo); ok && s.Orch.DeployEnabled() {
+		v.AutoDeploy = true
+	}
 	if t.PatchSHA != "" && t.State != store.TaskExpired {
 		if data, _, err := s.St.GetTaskPatch(r.Context(), t.ID); err == nil {
 			sum := patch.Summarize(data)

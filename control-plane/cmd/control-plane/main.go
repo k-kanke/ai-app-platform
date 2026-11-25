@@ -21,6 +21,7 @@ import (
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/github"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/kube"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/orchestrator"
+	"github.com/k-kanke/ai-app-platform/control-plane/internal/registry"
 	"github.com/k-kanke/ai-app-platform/control-plane/internal/store"
 )
 
@@ -79,6 +80,8 @@ func run(log *slog.Logger) error {
 	orch := orchestrator.New(st, k, broker, orchestrator.Options{
 		TokenSecret: cfg.TokenSecret, AgentTimeout: cfg.AgentTimeout + time.Minute, RuntimeTimeout: cfg.RuntimeTimeout, PollInterval: cfg.PollInterval,
 		TaskRetention: cfg.TaskRetention, GitHub: gh, LLMGateway: cfg.TasksEnabled && cfg.LLMGatewayURL != "",
+		Deploy: cfg.DeployTargets, Registry: registry.Client{}, DeployImageWait: cfg.DeployImageWait, DeployRolloutWait: cfg.DeployRolloutWait,
+		TaskWatch: time.Duration(cfg.TaskWatchDays) * 24 * time.Hour,
 	}, log)
 	var repoRe *regexp.Regexp
 	if cfg.TasksEnabled {
@@ -98,6 +101,11 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		go orch.RunTaskReconcileLoop(ctx, 10*time.Minute)
+		if orch.DeployEnabled() {
+			// After a pull request is merged: wait for CI's image and roll the repository's deployment onto it.
+			log.Info("deploy step enabled", "targets", len(cfg.DeployTargets))
+			go orch.RunDeployLoop(ctx, cfg.DeployPoll)
+		}
 	}
 
 	srv := &http.Server{

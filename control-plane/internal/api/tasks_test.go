@@ -15,9 +15,11 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -48,19 +50,25 @@ type tenv struct {
 	orch *orchestrator.Orchestrator
 	ts   *httptest.Server
 	logs string // what the Implementer "printed"
+	mu   sync.Mutex
 	// fake GitHub (only with topt.gh)
 	ghSrv     *httptest.Server
 	tokenReqs []map[string]any
+	// deploy step
+	reg *fakeRegistry
+	pr  fakePR
 }
 
 type topt struct {
-	retention time.Duration
-	maxActive int
-	disabled  bool
-	gh        bool // configure a (fake) GitHub App so approved tasks are published
-	gateway   bool // Implementers get an LLM gateway token instead of the shared key Secret
-	st        *store.Store
-	cs        *fake.Clientset
+	retention              time.Duration
+	maxActive              int
+	disabled               bool
+	gh                     bool          // configure a (fake) GitHub App so approved tasks are published
+	gateway                bool          // Implementers get an LLM gateway token instead of the shared key Secret
+	deploy                 bool          // a deploy target for k-kanke/genkan (needs gh): merged pull requests are rolled out
+	imageWait, rolloutWait time.Duration // deploy step timeouts (default one minute)
+	st                     *store.Store
+	cs                     *fake.Clientset
 }
 
 func newTenv(t *testing.T, o topt) *tenv {
@@ -92,6 +100,11 @@ func newTenv(t *testing.T, o topt) *tenv {
 			switch {
 			case strings.HasSuffix(r.URL.Path, "/installation"):
 				w.Write([]byte(`{"id": 9}`))
+			case strings.HasPrefix(r.URL.Path, "/repos/k-kanke/genkan/pulls/"):
+				e.mu.Lock()
+				pr := e.pr
+				e.mu.Unlock()
+				json.NewEncoder(w).Encode(map[string]any{"state": pr.state, "merged": pr.merged, "merge_commit_sha": pr.sha})
 			case strings.HasSuffix(r.URL.Path, "/access_tokens"):
 				var in map[string]any
 				json.NewDecoder(r.Body).Decode(&in)
@@ -103,6 +116,20 @@ func newTenv(t *testing.T, o topt) *tenv {
 			}
 		}))
 		opts.GitHub = &github.App{ID: "1", Key: key, APIBase: e.ghSrv.URL}
+	}
+	if o.deploy {
+		e.reg = &fakeRegistry{tags: map[string]string{"latest": "sha256:old"}}
+		opts.Registry = e.reg
+		opts.Deploy = []config.DeployTarget{{Repo: "k-kanke/genkan", Namespace: "genkan", Deployment: "genkan", Container: "genkan",
+			Image: "ghcr.io/k-kanke/genkan", Tag: "latest", SHATagPrefix: "sha-"}}
+		opts.DeployImageWait, opts.DeployRolloutWait = time.Minute, time.Minute
+		if o.imageWait > 0 {
+			opts.DeployImageWait = o.imageWait
+		}
+		if o.rolloutWait > 0 {
+			opts.DeployRolloutWait = o.rolloutWait
+		}
+		seedDeployment(o.cs, "sha256:old")
 	}
 	e.orch = orchestrator.New(o.st, kc, broker, opts, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	base, cancel := context.WithCancel(context.Background())
@@ -698,5 +725,225 @@ func TestWithoutAGatewayTheSharedSecretIsUsed(t *testing.T) {
 	c := e.job(task["id"].(string)).Spec.Template.Spec.Containers[0]
 	if len(c.EnvFrom) != 1 || c.EnvFrom[0].SecretRef.Name != "agent-credentials" {
 		t.Errorf("interim path: %+v", c.EnvFrom)
+	}
+}
+
+// ---- the deploy step ----
+
+type fakePR struct {
+	state  string
+	merged bool
+	sha    string
+}
+
+type fakeRegistry struct {
+	mu   sync.Mutex
+	tags map[string]string
+}
+
+func (f *fakeRegistry) Digest(ctx context.Context, image, tag string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if d, ok := f.tags[tag]; ok {
+		return d, nil
+	}
+	return "", errors.New("manifest unknown")
+}
+
+func (f *fakeRegistry) set(tag, digest string) { f.mu.Lock(); f.tags[tag] = digest; f.mu.Unlock() }
+
+// seedDeployment creates the Deployment genkan with one Ready pod running digest.
+func seedDeployment(cs *fake.Clientset, digest string) {
+	one := int32(1)
+	cs.AppsV1().Deployments("genkan").Create(context.Background(), &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "genkan", Namespace: "genkan", Generation: 1},
+		Spec:       appsv1.DeploymentSpec{Replicas: &one, Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "genkan"}}},
+		Status:     appsv1.DeploymentStatus{ObservedGeneration: 1, Replicas: 1, UpdatedReplicas: 1, AvailableReplicas: 1},
+	}, metav1.CreateOptions{})
+	setPod(cs, digest)
+}
+
+func setPod(cs *fake.Clientset, digest string) {
+	ctx := context.Background()
+	cs.CoreV1().Pods("genkan").Delete(ctx, "genkan-pod", metav1.DeleteOptions{})
+	cs.CoreV1().Pods("genkan").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "genkan-pod", Namespace: "genkan", Labels: map[string]string{"app": "genkan"}},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning,
+			Conditions:        []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "genkan", ImageID: "ghcr.io/k-kanke/genkan@" + digest}}},
+	}, metav1.CreateOptions{})
+}
+
+// published creates a task that is already PUBLISHED with pull request 7 of k-kanke/genkan.
+func (e *tenv) published(repo string) string {
+	e.t.Helper()
+	ctx := context.Background()
+	id := "ab12" + strings.Repeat("0", 4)
+	if _, _, err := e.st.CreateTask(ctx, store.Task{ID: id, Repo: repo, Prompt: "x"}); err != nil {
+		e.t.Fatal(err)
+	}
+	e.st.SetTaskState(ctx, id, store.TaskPublishing, "")
+	if err := e.st.MarkPublished(ctx, id, "https://github.com/"+repo+"/pull/7", 7); err != nil {
+		e.t.Fatal(err)
+	}
+	return id
+}
+
+func (e *tenv) check() {
+	e.t.Helper()
+	if err := e.orch.CheckDeploys(context.Background()); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func (e *tenv) state(id string) string {
+	t, err := e.st.GetTask(context.Background(), id)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return t.State
+}
+
+func (e *tenv) setPR(state string, merged bool, sha string) {
+	e.mu.Lock()
+	e.pr = fakePR{state, merged, sha}
+	e.mu.Unlock()
+}
+
+func (e *tenv) restartedAt() string {
+	d, _ := e.cs.AppsV1().Deployments("genkan").Get(context.Background(), "genkan", metav1.GetOptions{})
+	return d.Spec.Template.Annotations["aap.dev/restarted-at"]
+}
+
+const mergeSHA = "0123456789abcdef0123456789abcdef01234567"
+
+func TestMergedPullRequestIsRolledOutOntoTheNewImage(t *testing.T) {
+	e := newTenv(t, topt{gh: true, deploy: true})
+	id := e.published("k-kanke/genkan")
+
+	// 1) The pull request is still open: nothing happens.
+	e.setPR("open", false, "")
+	e.check()
+	if got := e.state(id); got != store.TaskPublished {
+		t.Fatalf("open PR: %s", got)
+	}
+
+	// 2) A person merges it: the task notices, and remembers the merge commit.
+	e.setPR("closed", true, mergeSHA)
+	e.check()
+	task, _ := e.st.GetTask(context.Background(), id)
+	if task.State != store.TaskMerged || task.MergeSHA != mergeSHA {
+		t.Fatalf("after the merge: %s %q", task.State, task.MergeSHA)
+	}
+
+	// 3) CI has not pushed the merge commit's image yet. The registry still has an older image than what is wanted,
+	//    which must NOT be taken for the new one: nothing is restarted.
+	e.reg.set("latest", "sha256:someone-elses-push")
+	e.check()
+	if got := e.state(id); got != store.TaskMerged || e.restartedAt() != "" {
+		t.Fatalf("before CI finished: state %s, restarted %q (an unrelated image in the registry must not count)", got, e.restartedAt())
+	}
+
+	// 4) CI pushes the image of the merge commit: the deployment is restarted, once, for this task.
+	e.reg.set("sha-0123456", "sha256:new")
+	e.reg.set("latest", "sha256:new")
+	e.check()
+	if got := e.state(id); got != store.TaskDeploying || e.restartedAt() != id {
+		t.Fatalf("after CI: state %s, restart token %q", got, e.restartedAt())
+	}
+
+	// 5) The rollout is not finished (the pod still runs the old image): keep waiting.
+	e.check()
+	if got := e.state(id); got != store.TaskDeploying {
+		t.Fatalf("rollout in progress: %s", got)
+	}
+
+	// 6) The new pod is up on the new image: done.
+	setPod(e.cs, "sha256:new")
+	e.check()
+	if got := e.state(id); got != store.TaskDeployed {
+		t.Fatalf("after the rollout: %s", got)
+	}
+	// A finished task is not touched again.
+	e.setPR("open", false, "")
+	e.check()
+	if got := e.state(id); got != store.TaskDeployed {
+		t.Fatalf("a deployed task changed: %s", got)
+	}
+}
+
+func TestAlreadyRunningTheNewImageIsNotRestarted(t *testing.T) {
+	e := newTenv(t, topt{gh: true, deploy: true})
+	id := e.published("k-kanke/genkan")
+	e.setPR("closed", true, mergeSHA)
+	e.check()
+	e.reg.set("sha-0123456", "sha256:old") // the merge commit's image is what already runs (e.g. restarted by hand)
+	e.check()
+	if got := e.state(id); got != store.TaskDeployed || e.restartedAt() != "" {
+		t.Fatalf("state %s, restarted %q: an image that already runs needs no restart", got, e.restartedAt())
+	}
+}
+
+func TestClosedWithoutMergeIsNotDeployed(t *testing.T) {
+	e := newTenv(t, topt{gh: true, deploy: true})
+	id := e.published("k-kanke/genkan")
+	e.setPR("closed", false, "")
+	e.check()
+	if got := e.state(id); got != store.TaskClosed || e.restartedAt() != "" {
+		t.Fatalf("state %s restarted %q", got, e.restartedAt())
+	}
+}
+
+func TestNoImageInTimeFailsWithAnExplanation(t *testing.T) {
+	e := newTenv(t, topt{gh: true, deploy: true, imageWait: 30 * time.Millisecond})
+	id := e.published("k-kanke/genkan")
+	e.setPR("closed", true, mergeSHA)
+	e.check() // MERGED
+	time.Sleep(60 * time.Millisecond)
+	e.check() // CI never produced the merge commit's image
+	task, _ := e.st.GetTask(context.Background(), id)
+	if task.State != store.TaskFailed || !strings.Contains(task.UserMessage, "新しいイメージができませんでした") {
+		t.Fatalf("state %s, message %q", task.State, task.UserMessage)
+	}
+	if task.PRURL == "" {
+		t.Error("the pull request link must survive a failed deploy")
+	}
+}
+
+func TestRolloutThatNeverFinishesFails(t *testing.T) {
+	e := newTenv(t, topt{gh: true, deploy: true, rolloutWait: 30 * time.Millisecond})
+	id := e.published("k-kanke/genkan")
+	e.setPR("closed", true, mergeSHA)
+	e.check()
+	e.reg.set("sha-0123456", "sha256:new")
+	e.reg.set("latest", "sha256:new")
+	e.check() // DEPLOYING; the pod keeps running the old image
+	time.Sleep(60 * time.Millisecond)
+	e.check()
+	task, _ := e.st.GetTask(context.Background(), id)
+	if task.State != store.TaskFailed || !strings.Contains(task.UserMessage, "新しいイメージで起動しきりませんでした") {
+		t.Fatalf("state %s, message %q", task.State, task.UserMessage)
+	}
+}
+
+func TestRepositoriesWithoutATargetAreLeftAlone(t *testing.T) {
+	e := newTenv(t, topt{gh: true, deploy: true})
+	id := e.published("k-kanke/other")
+	e.setPR("closed", true, mergeSHA)
+	e.check()
+	if got := e.state(id); got != store.TaskPublished {
+		t.Fatalf("a repository without a deploy target must stay PUBLISHED: %s", got)
+	}
+}
+
+func TestTaskViewSaysWhetherItDeploysAutomatically(t *testing.T) {
+	e := newTenv(t, topt{gh: true, deploy: true})
+	id := e.published("k-kanke/genkan")
+	other := "cd34" + strings.Repeat("0", 4)
+	e.st.CreateTask(context.Background(), store.Task{ID: other, Repo: "k-kanke/other", Prompt: "x"})
+	_, a := e.req("GET", "/api/v1/tasks/"+id, nil, nil)
+	_, b := e.req("GET", "/api/v1/tasks/"+other, nil, nil)
+	if a["autoDeploy"] != true || b["autoDeploy"] != nil {
+		t.Errorf("autoDeploy: genkan=%v other=%v", a["autoDeploy"], b["autoDeploy"])
 	}
 }

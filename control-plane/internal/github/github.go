@@ -227,3 +227,18 @@ func (c Client) FindOpenPR(ctx context.Context, repo, head string) (PullRequest,
 	}
 	return list[0], true, nil
 }
+
+// PRStatus is what a pull request is doing now.
+type PRStatus struct {
+	State  string `json:"state"`  // "open" or "closed"
+	Merged bool   `json:"merged"` // closed by a merge
+	// MergeCommitSHA is the commit on the base branch that a merge created (for a squash or rebase merge, the resulting commit).
+	MergeCommitSHA string `json:"merge_commit_sha"`
+}
+
+// PRStatus reads a pull request's state (a merge makes it closed and merged).
+func (c Client) PRStatus(ctx context.Context, repo string, number int) (PRStatus, error) {
+	var st PRStatus
+	err := c.app().do(ctx, "GET", fmt.Sprintf("/repos/%s/pulls/%d", repo, number), c.Token, nil, &st)
+	return st, err
+}

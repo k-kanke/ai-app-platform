@@ -157,6 +157,10 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(tasksSchema); err != nil {
 		return nil, err
 	}
+	// Columns added to tasks after it first shipped (a database that already has them reports "duplicate column").
+	if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN merge_sha TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return nil, err
+	}
 	// Columns added after the first release: ignore "duplicate column" on databases that have them.
 	for _, col := range []string{
 		`ALTER TABLE operations ADD COLUMN user_message TEXT NOT NULL DEFAULT ''`,

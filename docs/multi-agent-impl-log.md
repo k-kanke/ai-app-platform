@@ -216,3 +216,44 @@
 - ゲートウェイに API キーを入れる。手順は [`multi-agent-manual-steps.md`](multi-agent-manual-steps.md) の 1。
   (以前の記録にあった `aap-agents` への Secret のコピーは、**不要になった**。)
 
+## 2026-11-25 Phase 3 の実機反映: 見つかった問題が 2 つ(Cilium の FQDN、Gemini CLI の認証方式)
+
+**反映したもの**: `llm-gateway`(実機で Running、キーなしで 503 を返す状態)、Control Plane の `AAP_LLM_GATEWAY_URL`、
+承認ポリシーの最終形(Secret の参照を一切禁止)。Implementer は共有の Secret ではなく、タスク専用のトークンを受け取る。
+
+**問題 1: Cilium の FQDN 許可リストが、このクラスタでは動かなかった(元に戻した)**
+- 症状: `CiliumNetworkPolicy` の `toFQDNs` を入れると、Pod の DNS 引きが全てタイムアウトした(許可した名前でも)。
+  Cilium の DNS プロキシのインスタンスは作られ、ポリシーの拒否の記録も出ていない。
+- 原因の見立て(未確認): このクラスタの Cilium は 1.18.2 で `kube-proxy-replacement=false`、`bpf-lb-sock=false`
+  (Service の変換は kube-proxy)。kube-dns の Service IP(`10.96.0.10`)宛ての DNS を許可する書き方も足したが、直らなかった。
+- 対応: 実機で確認してすぐに戻した(旧い NetworkPolicy に復元し、Implementer からゲートウェイ(8080)への通信を足した)。
+  FQDN 版は `kubernetes-platform/manifests/ai-app-platform/experimental/cilium-fqdn-policies.yaml` に、理由と一緒に残した(適用しない)。
+- **残る制限**: Implementer と Publisher は、公開インターネットの HTTPS(443)に出られる(LAN、クラスタ、他の namespace は遮断のまま)。
+  実機のテスト Pod で確認した: github.com と npm は届く、ゲートウェイと Control Plane は届く、`192.168.0.1`、kube-apiserver、
+  portal、monitoring は遮断。**情報の持ち出しは、まだ防げていない**(API キーは持っていないので、盗まれるものは小さい)。
+  防ぐには、Cilium の kube-proxy 置き換え(またはソケット LB)を有効にしてから、FQDN 版を再試行する。
+- 副産物: FQDN が使えなくても、キーが Pod にない(ゲートウェイ)ことと、リクエスト数の上限は有効。
+
+**問題 2: Gemini CLI が、ゲートウェイの設定だと認証方式エラーで止まった**
+- 症状(実機のタスク): `Invalid auth method selected.`。ゲートウェイには何も届かなかった。
+- 原因: `GOOGLE_GEMINI_BASE_URL` を設定すると、CLI(0.62.0)は認証方式を `gateway` と自動選択するが、ヘッドレスの検証
+  (`validateAuthMethod`)が `gateway` を知らず、弾く。CLI のソースで確認した。
+- 修正: `task-entrypoint.sh` が書く `settings.json` に `security.auth.selectedType: "gemini-api-key"` を足した。
+  この方式でも、`GEMINI_API_KEY`(ここではタスクのトークン)が `GOOGLE_GEMINI_BASE_URL` へ送られる。
+- ローカルで再現して直した。`hack/check-gemini-gateway.sh`(**本物の Gemini CLI** を、Implementer と同じ起動で、偽のゲートウェイに向ける)を
+  回帰テストとして残した。`WITH_GATEWAY=1` を付けると、**本物のゲートウェイのバイナリ**を CLI と偽の LLM の間に挟む。
+
+**確認(ローカル、本物の CLI と本物のゲートウェイ)**
+- ✅ 認証方式を固定すると、CLI は `POST /v1beta/models/<model>:(stream)generateContent`(`?alt=sse` 付き)を、キーの位置にトークンを入れて送る。
+  使うモデルは `gemini-3.1-pro-preview` と `gemini-3.5-flash-lite`(`^gemini-` に合う)。許可していない呼び出しは 1 つもなかった。
+- ✅ ゲートウェイを挟むと、偽の LLM に届いた 6 回の呼び出しは、すべて**本物のキー**で、タスクのトークンは漏れなかった。SSE も通った。
+- ⚠ モデルの既定は `gemini-3.1-pro-preview`(`AAP_GEMINI_MODEL` を渡さない場合)。実機では Control Plane の `AAP_GEMINI_MODEL=gemini-3.8-flash`
+  が渡る。費用は、リクエスト数の上限(1 タスク 400、1 日 3000)と、Google 側の予算アラートで抑える。
+
+**詰まったこと(テスト)**
+- CI で、**既存の** `TestReleaseStrategyLifecycle` が落ちた。タスク機能を入れる前のコミットでも、40 回回すと別のアサーションで落ちることを確認した
+  (偽の kubelet のタイミングが原因とみられる)。私の変更が原因ではない。タイムアウトを広げても直ったという証拠がなかったので、その変更は戻した。
+  失敗したジョブを再実行して通した。**このフレーキーは直していない**(別の課題)。
+- `git add -A docs` で、**あなたの未コミットの変更**(`docs/slide-assets/terminal-d1-pending.html` の色分け 6 行)が、私のコミット `ecfee12` に
+  混ざって push された。内容は無害だが、意図しない混入だった。履歴は書き換えていない。以降は、パスを明示して `git add` している。
+

@@ -25,8 +25,12 @@ cd "$REPO_DIR" || die "リポジトリがありません"
 # Global agent instructions live in $HOME, not in the repository: they must not end up in the patch.
 mkdir -p "$HOME/.gemini"
 cp /opt/aap/AGENTS.task.md "$HOME/.gemini/GEMINI.md"
+# security.auth.selectedType is needed: with GOOGLE_GEMINI_BASE_URL set (LLM gateway) the CLI would auto-select its "gateway"
+# auth type, which its own headless validation rejects ("Invalid auth method selected."). With gemini-api-key it still sends
+# GEMINI_API_KEY (here: the task token) to GOOGLE_GEMINI_BASE_URL. Checked against the CLI by hack/check-gemini-gateway.sh.
 cat > "$HOME/.gemini/settings.json" <<'JSON'
 {
+  "security": { "auth": { "selectedType": "gemini-api-key" } },
   "general": { "disableAutoUpdate": true, "disableUpdateNag": true },
   "privacy": { "usageStatisticsEnabled": false },
   "telemetry": { "enabled": false },

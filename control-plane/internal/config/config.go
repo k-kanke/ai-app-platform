@@ -39,6 +39,16 @@ type Config struct {
 	IngressHostPattern string        // e.g. "{id}.apps.home"
 
 	Kubeconfig string // empty = in-cluster
+
+	// Repository tasks (docs/multi-agent-permissions.md). Off unless AAP_TASKS_ENABLED=true.
+	TasksEnabled      bool
+	TasksNamespace    string        // where task workspaces and Jobs live (not the family-app namespace)
+	TaskWorkspaceSize string        // PVC size per task
+	TaskRetention     time.Duration // how long a finished task keeps its workspace and patch
+	TaskRepoPattern   string        // regular expression a repository ("owner/name") must match
+	TaskMaxPatchBytes int           // larger patches are rejected
+	TaskMaxActive     int           // tasks running at once
+	TaskGitBase       string        // clone URL base; empty = https://github.com (tests point it elsewhere)
 }
 
 func Load() (Config, error) {
@@ -63,6 +73,22 @@ func Load() (Config, error) {
 		Agent:              env("AAP_AGENT", "template"),
 		GeminiModel:        os.Getenv("AAP_GEMINI_MODEL"),
 		DefaultStrategy:    env("AAP_DEFAULT_STRATEGY", "inplace"),
+		TasksEnabled:       env("AAP_TASKS_ENABLED", "false") == "true",
+		TasksNamespace:     env("AAP_TASKS_NAMESPACE", "aap-agents"),
+		TaskWorkspaceSize:  env("AAP_TASK_WORKSPACE_SIZE", "2Gi"),
+		TaskRepoPattern:    env("AAP_TASK_REPO_PATTERN", `^k-kanke/[A-Za-z0-9._-]+$`),
+		TaskGitBase:        os.Getenv("AAP_TASK_GIT_BASE"),
+	}
+	hours, err := strconv.Atoi(env("AAP_TASK_RETENTION_HOURS", "24"))
+	if err != nil || hours <= 0 {
+		return c, fmt.Errorf("AAP_TASK_RETENTION_HOURS must be a positive integer")
+	}
+	c.TaskRetention = time.Duration(hours) * time.Hour
+	if c.TaskMaxPatchBytes, err = strconv.Atoi(env("AAP_TASK_MAX_PATCH_BYTES", "1048576")); err != nil || c.TaskMaxPatchBytes <= 0 {
+		return c, fmt.Errorf("AAP_TASK_MAX_PATCH_BYTES must be a positive integer")
+	}
+	if c.TaskMaxActive, err = strconv.Atoi(env("AAP_TASK_MAX_ACTIVE", "2")); err != nil || c.TaskMaxActive <= 0 {
+		return c, fmt.Errorf("AAP_TASK_MAX_ACTIVE must be a positive integer")
 	}
 	mins, err := strconv.Atoi(env("AAP_AGENT_TIMEOUT_MINUTES", "20"))
 	if err != nil || mins <= 0 {

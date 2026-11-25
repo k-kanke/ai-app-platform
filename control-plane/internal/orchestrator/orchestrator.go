@@ -31,6 +31,7 @@ type Options struct {
 	RuntimeTimeout time.Duration
 	HelperTimeout  time.Duration
 	AgentTimeout   time.Duration
+	TaskRetention  time.Duration // repository tasks: how long a finished task keeps its workspace and patch
 }
 
 type Orchestrator struct {

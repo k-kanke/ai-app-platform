@@ -32,6 +32,12 @@ type Server struct {
 	// DefaultStrategy is used when a create request does not say ("" = inplace). New apps can opt in
 	// to the release strategy with {"strategy":"release"}; existing apps keep their strategy.
 	DefaultStrategy string
+
+	// Repository tasks (off unless TasksEnabled).
+	TasksEnabled  bool
+	TaskRepoRe    *regexp.Regexp // allowed repositories; nil = any valid owner/name
+	TaskMaxPatch  int            // bytes
+	TaskMaxActive int            // tasks running at once
 }
 
 func (s *Server) Handler() http.Handler {
@@ -50,6 +56,9 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/apps/{id}/operations", s.listOps)
 	m.HandleFunc("GET /api/v1/apps/{id}/events", s.sse)
 	m.HandleFunc("POST /internal/v1/operations/{op}/events", s.agentEvent)
+	if s.TasksEnabled {
+		s.registerTasks(m)
+	}
 	return m
 }
 
@@ -377,6 +386,11 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "app not found")
 		return
 	}
+	s.streamEvents(w, r, id)
+}
+
+// streamEvents serves the event stream stored under key (an app id, or store.TaskKey(task id)).
+func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request, id string) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
 		writeErr(w, 500, "streaming unsupported")

@@ -154,6 +154,9 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
+	if _, err := db.Exec(tasksSchema); err != nil {
+		return nil, err
+	}
 	// Columns added after the first release: ignore "duplicate column" on databases that have them.
 	for _, col := range []string{
 		`ALTER TABLE operations ADD COLUMN user_message TEXT NOT NULL DEFAULT ''`,

@@ -270,7 +270,11 @@ func (c *Client) JobLogTail(ctx context.Context, appID, role, opID string, lines
 
 // JobStatus reports a Job's phase; reason carries a failure message.
 func (c *Client) JobStatus(ctx context.Context, name string) (JobPhase, string, error) {
-	j, err := c.cs.BatchV1().Jobs(c.cfg.Namespace).Get(ctx, name, metav1.GetOptions{})
+	return c.jobStatusIn(ctx, c.cfg.Namespace, name)
+}
+
+func (c *Client) jobStatusIn(ctx context.Context, ns, name string) (JobPhase, string, error) {
+	j, err := c.cs.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return JobMissing, "", nil
 	}

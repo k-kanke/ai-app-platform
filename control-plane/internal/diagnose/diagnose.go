@@ -51,3 +51,30 @@ func Tail(s string, n, max int) string {
 	}
 	return out
 }
+
+// taskRules are checked before the shared ones for repository tasks, whose reader is the owner
+// (not a family member) and whose failures include cloning and the repository's own tests.
+var taskRules = []rule{
+	{regexp.MustCompile(`(?i)repository .*not found|could not read from remote|unable to access|fatal: .*clone|Authentication failed|Could not resolve host`),
+		"リポジトリを取得できませんでした。名前が違うか、非公開の可能性があります。"},
+	{regexp.MustCompile(`(?i)# fail [1-9]|not ok \d+|npm ERR! .*test|Tests?:\s+\d+ failed|FAIL\s`),
+		"テストが通りませんでした。詳しい内容はログで確認できます。"},
+}
+
+const taskFallback = "作業が途中で止まりました。詳しい内容はログで確認できます。"
+
+// ClassifyTask is Classify for a repository task's Implementer.
+func ClassifyTask(logTail, reason string) string {
+	text := logTail + "\n" + reason
+	for _, r := range taskRules {
+		if r.re.MatchString(text) {
+			return r.msg
+		}
+	}
+	for _, r := range rules[:4] { // quota, key, timeout, connectivity: wording applies to any agent
+		if r.re.MatchString(text) {
+			return r.msg
+		}
+	}
+	return taskFallback
+}

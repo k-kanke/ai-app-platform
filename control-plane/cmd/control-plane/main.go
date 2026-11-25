@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 
@@ -61,17 +62,32 @@ func run(log *slog.Logger) error {
 	broker := events.NewBroker()
 	orch := orchestrator.New(st, k, broker, orchestrator.Options{
 		TokenSecret: cfg.TokenSecret, AgentTimeout: cfg.AgentTimeout + time.Minute, RuntimeTimeout: cfg.RuntimeTimeout, PollInterval: cfg.PollInterval,
+		TaskRetention: cfg.TaskRetention,
 	}, log)
+	var repoRe *regexp.Regexp
+	if cfg.TasksEnabled {
+		if repoRe, err = regexp.Compile(cfg.TaskRepoPattern); err != nil {
+			return errors.New("AAP_TASK_REPO_PATTERN is not a valid regular expression: " + err.Error())
+		}
+	}
 	// Pick up operations that were in flight when the previous process stopped.
 	if err := orch.Resume(ctx); err != nil {
 		return err
 	}
 
 	go orch.RunReconcileLoop(ctx, 5*time.Minute)
+	if cfg.TasksEnabled {
+		// Repository tasks: pick up unfinished ones, and expire old workspaces and patches.
+		if err := orch.ResumeTasks(ctx); err != nil {
+			return err
+		}
+		go orch.RunTaskReconcileLoop(ctx, 10*time.Minute)
+	}
 
 	srv := &http.Server{
 		Addr: cfg.Listen, ReadHeaderTimeout: 10 * time.Second,
-		Handler: (&api.Server{St: st, Kube: k, Orch: orch, Broker: broker, BaseCtx: ctx, AppURLTemplate: cfg.AppURLTemplate, DefaultStrategy: cfg.DefaultStrategy}).Handler(),
+		Handler: (&api.Server{St: st, Kube: k, Orch: orch, Broker: broker, BaseCtx: ctx, AppURLTemplate: cfg.AppURLTemplate, DefaultStrategy: cfg.DefaultStrategy,
+			TasksEnabled: cfg.TasksEnabled, TaskRepoRe: repoRe, TaskMaxPatch: cfg.TaskMaxPatchBytes, TaskMaxActive: cfg.TaskMaxActive}).Handler(),
 	}
 	go func() {
 		<-ctx.Done()

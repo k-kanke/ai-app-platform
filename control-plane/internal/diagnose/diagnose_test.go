@@ -36,3 +36,22 @@ func TestTail(t *testing.T) {
 		t.Errorf("max bytes not applied: %d", len(got))
 	}
 }
+
+func TestClassifyTask(t *testing.T) {
+	cases := map[string]string{
+		"fatal: repository 'https://github.com/k-kanke/nope.git/' not found":            "リポジトリを取得できませんでした",
+		"fatal: unable to access 'https://github.com/x/y.git/': Could not resolve host": "リポジトリを取得できませんでした",
+		"npm ERR! code ELIFECYCLE\nnpm ERR! test failed":                                "テストが通りませんでした",
+		"exceeded your current quota":                                                   "AIの利用上限",
+		"something odd":                                                                 "作業が途中で止まりました",
+	}
+	for in, want := range cases {
+		if got := ClassifyTask(in, ""); !strings.Contains(got, want) {
+			t.Errorf("ClassifyTask(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+	// Family-facing wording must not leak into task failures.
+	if got := ClassifyTask("something odd", ""); strings.Contains(got, "アプリ") {
+		t.Errorf("task fallback mentions the app: %q", got)
+	}
+}

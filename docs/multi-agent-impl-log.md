@@ -77,3 +77,36 @@
   ローカルにないときは**ホストで Go をクロスコンパイルして、ローカルにある alpine に載せる**経路を足した。
 - git の実際のメッセージ(`repository '…' not found`)に、最初の正規表現が合っていなかった。テストで見つけて直した。
 
+## 2026-11-25 Phase 1 + Phase 2 を実クラスタ(自宅)に反映
+
+**やったこと**
+- `kubernetes-platform`(`master`、コミット `ed2991c`): Control Plane に `AAP_TASKS_ENABLED=true` と
+  `AAP_TASKS_NAMESPACE=aap-agents` を追加。`control-plane-ingress` に genkan(`app=genkan`)からの許可を追加。
+- `genkan`(コミット `fde4369` と、`conf` の emptyDir を足した修正): 「タスク」タブ(依頼フォーム、履歴、
+  詳細、差分の表示、承認・却下)。nginx が `/cp/v1/tasks` だけを Control Plane の `/api/v1/tasks` へ中継する
+  (`internal` 系と他の API は 404、GET / POST 以外は 403)。
+- nginx の設定は、公式イメージのテンプレート機能(`/etc/nginx/templates/`)で生成する。リゾルバは起動時に
+  `/etc/resolv.conf` から埋まるので、Control Plane の Service を起動時に引けなくても genkan は落ちない。
+
+**詰まったこと**
+- 波括弧を含む正規表現(`{1,32}`)を引用符で囲まないと、nginx が起動しなかった。ローカルで本番と同じイメージを動かして気づいた。
+- genkan は `readOnlyRootFilesystem` で動くため、起動時の `default.conf` の生成に失敗して CrashLoop になった。
+  `/etc/nginx/conf.d` に emptyDir を足して解消。古い Pod が動き続けたので、公開は止まらなかった。
+- `finishedAt` が未完了のときも `0001-01-01…` と出ていた。`omitzero` に変更。
+
+**確認(実機)**
+- ✅ genkan の中から `/cp/v1/tasks` が使える。`/cp/internal/…` と `/cp/v1/apps` は 404。
+- ✅ 実際にタスクを作成: `aap-agents` に PVC(`local-path`、worker-02 に束縛)と Job ができ、clone まで進んだ
+  (GitHub への HTTPS、init container、`restricted` の PodSecurity、Control Plane への進捗の通信が通った)。
+- ✅ Gemini の API キーが無いため、エージェントの手前で失敗し、「AIを使うための鍵に問題があります」と説明された(想定どおり)。
+
+**🖐 あなたの手作業が必要(未実施)**
+- Gemini の API キーの Secret を `aap-agents` にも作る。自動モードの分類器に、Secret の複製を拒否されたため、
+  私は実行していない(キーの扱いは、あなたの明示的な許可が要る操作として扱った)。実行するコマンド(ubuntu-26 で):
+  ```sh
+  kubectl -n aap-apps get secret agent-credentials -o json \
+    | python3 -c 'import sys,json; s=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","metadata":{"name":"agent-credentials","namespace":"aap-agents"},"type":s.get("type","Opaque"),"data":s["data"]}))' \
+    | kubectl apply -f -
+  ```
+  これは Phase 3(LLM ゲートウェイ)までの暫定措置。ゲートウェイができたら、このコピーは削除する。
+

@@ -47,7 +47,7 @@ type Task struct {
 	IdempotencyKey string    `json:"-"`
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
-	FinishedAt     time.Time `json:"finishedAt,omitempty"` // zero while active
+	FinishedAt     time.Time `json:"finishedAt,omitzero"` // zero while active
 }
 
 const tasksSchema = `

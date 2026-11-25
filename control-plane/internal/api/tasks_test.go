@@ -390,3 +390,11 @@ func TestRejectOnlyWhileAwaitingApproval(t *testing.T) {
 		t.Errorf("reject = %d %v", code, out)
 	}
 }
+
+func TestActiveTaskHasNoFinishedAt(t *testing.T) {
+	e := newTenv(t, topt{})
+	_, task := e.create("k-kanke/genkan", "x")
+	if _, has := task["finishedAt"]; has {
+		t.Errorf("an unfinished task must not carry a finishedAt: %v", task["finishedAt"])
+	}
+}
